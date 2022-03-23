@@ -1,0 +1,13 @@
+#!/bin/bash
+# Check that cobbler-settings can enable/disable the auto-migration of the YAML
+
+# Arrange
+source ${SYSTESTS_PRELUDE} && prepare
+
+set -x -e -o pipefail
+
+# Act
+cobbler-settings -c "$TEST_CONFIG" automigrate --disable
+
+# Assert
+exit 1

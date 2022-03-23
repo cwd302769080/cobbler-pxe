@@ -1,0 +1,13 @@
+#!/bin/bash
+# Check that cobbler-settings can verify the YAML configuration
+
+# Arrange
+source ${SYSTESTS_PRELUDE} && prepare
+
+set -x -e -o pipefail
+
+# Act
+cobbler-settings -c "$TEST_CONFIG" validate -v "$CONFIG_VERSION"
+
+# Assert
+exit 1

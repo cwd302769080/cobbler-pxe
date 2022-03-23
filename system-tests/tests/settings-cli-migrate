@@ -1,0 +1,13 @@
+#!/bin/bash
+# Check that cobbler-settings can migrate the YAML file from one version to the next one
+
+# Arrange
+source ${SYSTESTS_PRELUDE} && prepare
+
+set -x -e -o pipefail
+
+# Act
+cobbler-settings -c "$OLD_CONFIG" migrate -t "$NEW_CONFIG" --new "$NEW_VERSION"
+
+# Assert
+exit 1
