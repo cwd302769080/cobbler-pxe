@@ -6,8 +6,14 @@ source ${SYSTESTS_PRELUDE} && prepare
 
 set -x -e -o pipefail
 
+TEST_CONFIG="${tmp}/settings.yaml"
+
+cat <<-END >$TEST_CONFIG
+auto_migrate_settings: true
+END
+
 # Act
 cobbler-settings -c "$TEST_CONFIG" automigrate --disable
 
 # Assert
-exit 1
+grep "auto_migrate_settings: false" "$TEST_CONFIG"
