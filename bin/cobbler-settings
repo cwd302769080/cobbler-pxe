@@ -11,7 +11,7 @@ Tool to manage the settings of Cobbler without the daemon running.
 import argparse
 import sys
 from typing import List
-from schema import SchemaError
+from schema import Optional, SchemaError
 import yaml
 from cobbler import settings
 from cobbler.settings import migrations
@@ -115,6 +115,8 @@ def modify(args: argparse.Namespace) -> int:
     setting_obj = helper.Setting(args.key, args.value)
     # _schema used due to old version of python3-schema in Leap
     key_type = schema._schema[setting_obj.key_name]
+    if isinstance(Optional, key_type):
+        key_type = schema._schema[setting_obj.key_name].name
     if key_type == bool:
         setting_obj.value = input_boolean(setting_obj.value)
     elif key_type == int:
@@ -123,6 +125,8 @@ def modify(args: argparse.Namespace) -> int:
         setting_obj.value = input_string_or_list(setting_obj.value)
     elif key_type == dict:
         setting_obj.value = input_string_or_dict(setting_obj.value)
+    elif key_type == str:
+        setting_obj.value = setting_obj.value
     else:
         print("Unsupported type!")
         return 1

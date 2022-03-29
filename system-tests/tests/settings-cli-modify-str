@@ -6,8 +6,16 @@ source ${SYSTESTS_PRELUDE} && prepare
 
 set -x -e -o pipefail
 
+TEST_CONFIG="${tmp}/settings-str.yaml"
+cat <<-END >$TEST_CONFIG
+buildisodir: "/var/cache/cobbler/buildiso"
+END
+
+TEST_KEY=""
+TEST_VALUE=""
+
 # Act
 cobbler-settings -c "$TEST_CONFIG" modify -k "$TEST_KEY" -v "$TEST_VALUE"
 
 # Assert
-exit 1
+grep "$TEST_KEY: $TEST_VALUE" $TEST_CONFIG
