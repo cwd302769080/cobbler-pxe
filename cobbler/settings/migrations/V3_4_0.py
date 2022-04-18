@@ -8,6 +8,8 @@ Migration from V3.3.1 to V3.3.2
 
 from schema import Optional, Schema, SchemaError
 
+from cobbler.settings.migrations import helper
+
 schema = Schema(
     {
         "auto_migrate_settings": bool,
@@ -227,6 +229,10 @@ schema = Schema(
         Optional("windows_enabled", default=False): bool,
         Optional("windows_template_dir", default="/etc/cobbler/windows"): str,
         Optional("samba_distro_share", default="DISTRO"): str,
+        Optional("mongodb", default={"host": "localhost", "port": 27017}): {
+            Optional("host", default="localhost"): str,
+            Optional("port", default=27017): int,
+        },
     },
     ignore_extra_keys=False,
 )
@@ -266,6 +272,8 @@ def migrate(settings: dict) -> dict:
 
     # rename keys and update their value
     # add missing keys
+    mongodb_settings = helper.Setting("mongodb", {"host": "localhost", "port": 27017})
+    helper.key_add(mongodb_settings, settings)
     # name - value pairs
 
     if not validate(settings):

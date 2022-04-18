@@ -601,7 +601,6 @@ if __name__ == "__main__":
                 [
                     "config/cobbler/auth.conf",
                     "config/cobbler/modules.conf",
-                    "config/cobbler/mongodb.conf",
                     "config/cobbler/users.conf",
                     "config/cobbler/users.digest",
                     "config/cheetah/cheetah_macros",

@@ -126,6 +126,7 @@ class Settings:
         self.manage_tftpd = True
         self.mgmt_classes = []
         self.mgmt_parameters = {}
+        self.mongodb = {}
         self.next_server_v4 = "127.0.0.1"
         self.next_server_v6 = "::1"
         self.nsupdate_enabled = False

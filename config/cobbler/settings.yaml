@@ -570,6 +570,11 @@ puppet_version: 2
 signature_path: "/var/lib/cobbler/distro_signatures.json"
 signature_url: "https://cobbler.github.io/signatures/3.0.x/latest.json"
 
+# mongodb.conf replacement
+mongodb:
+  host: "localhost"
+  port: 27017
+
 # Include other configuration snippets. Overwriting a key from this file in a childfile will overwrite the value from
 # this file.
 include: [ "/etc/cobbler/settings.d/*.settings" ]
