@@ -227,6 +227,46 @@ schema = Schema(
         Optional("windows_enabled", default=False): bool,
         Optional("windows_template_dir", default="/etc/cobbler/windows"): str,
         Optional("samba_distro_share", default="DISTRO"): str,
+        Optional(
+            "modules",
+            default={
+                "authentication": {
+                    "module": "authentication.configfile",
+                    "hash_algorithm": "sha3_512",
+                },
+                "authorization": {"module": "authorization.allowall"},
+                "dns": {"module": "managers.bind"},
+                "dhcp": {"module": "managers.isc"},
+                "tftpd": {"module": "managers.in_tftpd"},
+                "serializers": {"module": "serializers.file"},
+            },
+        ): {
+            Optional(
+                "authentication",
+                default={
+                    "module": "authentication.configfile",
+                    "hash_algorithm": "sha3_512",
+                },
+            ): {
+                Optional("module", default="authentication.configfile"): str,
+                Optional("hash_algorithm", default="sha3_512"): str,
+            },
+            Optional("authorization", default={"module": "authorization.allowall"}): {
+                Optional("module", default="authorization.allowall"): str
+            },
+            Optional("dns", default={"module": "managers.bind"}): {
+                Optional("module", default="managers.bind"): str
+            },
+            Optional("dhcp", default={"module": "managers.isc"}): {
+                Optional("module", default="managers.isc"): str
+            },
+            Optional("tftpd", default={"module": "managers.in_tftpd"}): {
+                Optional("module", default="managers.in_tftpd"): str
+            },
+            Optional("serializers", default={"module": "serializers.file"}): {
+                Optional("module", default="serializers.file"): str
+            },
+        },
     },
     ignore_extra_keys=False,
 )

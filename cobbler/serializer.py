@@ -27,8 +27,6 @@ import sys
 import time
 import traceback
 
-from cobbler import module_loader
-
 LOCK_ENABLED = True
 LOCK_HANDLE = None
 
@@ -71,51 +69,55 @@ def __release_lock(with_changes=False):
         LOCK_HANDLE.close()
 
 
-def serialize(collection):
+def serialize(api, collection):
     """
     Save a collection to disk
 
+    :param api: CobblerAPI
     :param collection: The collection to serialize.
     """
 
     __grab_lock()
-    storage_module = __get_storage_module(collection.collection_type())
+    storage_module = __get_storage_module(api, collection.collection_type())
     storage_module.serialize(collection)
     __release_lock()
 
 
-def serialize_item(collection, item):
+def serialize_item(api, collection, item):
     """
     Save a collection item to disk
 
+    :param api: CobblerAPI
     :param collection: The Cobbler collection to know the type of the item.
     :param item: The collection item to serialize.
     """
 
     __grab_lock()
-    storage_module = __get_storage_module(collection.collection_type())
+    storage_module = __get_storage_module(api, collection.collection_type())
     storage_module.serialize_item(collection, item)
     __release_lock(with_changes=True)
 
 
-def serialize_delete(collection, item):
+def serialize_delete(api, collection, item):
     """
     Delete a collection item from disk
 
+    :param api: CobblerAPI
     :param collection: The Cobbler collection to know the type of the item.
     :param item: The collection item to delete.
     """
 
     __grab_lock()
-    storage_module = __get_storage_module(collection.collection_type())
+    storage_module = __get_storage_module(api, collection.collection_type())
     storage_module.serialize_delete(collection, item)
     __release_lock(with_changes=True)
 
 
-def deserialize(collection, topological: bool = True):
+def deserialize(api, collection, topological: bool = True):
     """
     Load a collection from disk.
 
+    :param api: CobblerAPI
     :param collection: The Cobbler collection to know the type of the item.
     :param topological: Sort collection based on each items' depth attribute
                         in the list of collection items.  This ensures
@@ -124,18 +126,18 @@ def deserialize(collection, topological: bool = True):
                         profiles/subprofiles.  See cobbler/items/item.py
     """
     __grab_lock()
-    storage_module = __get_storage_module(collection.collection_type())
+    storage_module = __get_storage_module(api, collection.collection_type())
     storage_module.deserialize(collection, topological)
     __release_lock()
 
 
-def __get_storage_module(collection_type):
+def __get_storage_module(api, collection_type: str):
     """
+    FIXME
     Look up serializer in /etc/cobbler/modules.conf
 
+    :param api: CobblerAPI
     :param collection_type: str
     :returns: A Python module.
     """
-    return module_loader.get_module_from_file(
-        "serializers", collection_type, "serializers.file"
-    )
+    return api.get_module_from_file("serializers", collection_type, "serializers.file")

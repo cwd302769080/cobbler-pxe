@@ -570,6 +570,20 @@ puppet_version: 2
 signature_path: "/var/lib/cobbler/distro_signatures.json"
 signature_url: "https://cobbler.github.io/signatures/3.0.x/latest.json"
 
+# Cobbler modules.conf replacement
+modules:
+  authentication:
+    module: "authentication.configfile"
+    hash_algorithm: "sha3_512"
+  authorization:
+    module: "authorization.allowall"
+  dns:
+    module: "managers.bind"
+  dhcp:
+    module: "managers.isc"
+  tftpd:
+    module: "managers.in_tftpd"
+
 # Include other configuration snippets. Overwriting a key from this file in a childfile will overwrite the value from
 # this file.
 include: [ "/etc/cobbler/settings.d/*.settings" ]
