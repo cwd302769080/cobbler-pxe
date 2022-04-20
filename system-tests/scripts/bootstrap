@@ -12,6 +12,7 @@ ip link set up dev ${bridge}
 mkdir -p ${etc_qemu}
 echo allow ${bridge} >>${etc_qemu}/bridge.conf
 
+# This is specific for the openSUSE environment
 cat >/etc/cobbler/settings.yaml <<-EOF
 	server: ${server}
 	next_server_v4: ${server}
@@ -19,6 +20,7 @@ cat >/etc/cobbler/settings.yaml <<-EOF
 	manage_dhcp_v4: true
 	manage_dhcp_v6: false
 	power_management_default_type: 'ipmilan'
+	grub2_mod_dir: '/usr/share/grub2'
 EOF
 
 supervisorctl restart cobblerd
