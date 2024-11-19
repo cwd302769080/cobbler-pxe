@@ -1,31 +1,145 @@
 """
-Copyright 2006-2009, Red Hat, Inc and Others
-Michael DeHaan <michael.dehaan AT gmail>
+Cobbler module that contains the code for a Cobbler image object.
 
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
+Changelog:
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+V3.4.0 (unreleased):
+    * Added:
+        * ``display_name``
+    * Changed:
+        * Constructor: ``kwargs`` can now be used to seed the item during creation.
+        * ``autoinstall``: Restored inheritance of the property.
+        * ``children``: The proqperty was moved to the base class.
+        * ``from_dict()``: The method was moved to the base class.
+        * ``virt_disk_driver``: Restored inheritance of the property.
+        * ``virt_ram``: Restored inheritance of the property.
+        * ``virt_type``: Restored inheritance of the property.
+        * ``virt_bridge``: Restored inheritance of the property.
+V3.3.4 (unreleased):
+    * No changes
+V3.3.3:
+    * Added:
+        * ``children``
+    * Changes:
+        * ``virt_file_size``: Inherits from the settings again
+        * ``boot_loaders``: Inherits from the settings again
+V3.3.2:
+    * No changes
+V3.3.1:
+    * No changes
+V3.3.0:
+    * This release switched from pure attributes to properties (getters/setters).
+    * Added:
+        * ``boot_loaders``: list
+        * ``menu``: str
+        * ``supported_boot_loaders``: list
+        * ``from_dict()``
+    * Moved to parent class (Item):
+        * ``ctime``: float
+        * ``mtime``: float
+        * ``depth``: int
+        * ``parent``: str
+        * ``uid``: str
+        * ``comment``: str
+        * ``name``: str
+    * Removed:
+        * ``get_fields()``
+        * ``get_parent()``
+        * ``set_arch()`` - Please use the ``arch`` property.
+        * ``set_autoinstall()`` - Please use the ``autoinstall`` property.
+        * ``set_file()`` - Please use the ``file`` property.
+        * ``set_os_version()`` - Please use the ``os_version`` property.
+        * ``set_breed()`` - Please use the ``breed`` property.
+        * ``set_image_type()`` - Please use the ``image_type`` property.
+        * ``set_virt_cpus()`` - Please use the ``virt_cpus`` property.
+        * ``set_network_count()`` - Please use the ``network_count`` property.
+        * ``set_virt_auto_boot()`` - Please use the ``virt_auto_boot`` property.
+        * ``set_virt_file_size()`` - Please use the ``virt_file_size`` property.
+        * ``set_virt_disk_driver()`` - Please use the ``virt_disk_driver`` property.
+        * ``set_virt_ram()`` - Please use the ``virt_ram`` property.
+        * ``set_virt_type()`` - Please use the ``virt_type`` property.
+        * ``set_virt_bridge()`` - Please use the ``virt_bridge`` property.
+        * ``set_virt_path()`` - Please use the ``virt_path`` property.
+        * ``get_valid_image_types()``
+    * Changes:
+        * ``arch``: str -> enums.Archs
+        * ``autoinstall``: str -> enums.VALUE_INHERITED
+        * ``image_type``: str -> enums.ImageTypes
+        * ``virt_auto_boot``: Union[bool, SETTINGS:virt_auto_boot] -> bool
+        * ``virt_bridge``: Union[str, SETTINGS:default_virt_bridge] -> str
+        * ``virt_disk_driver``: Union[str, SETTINGS:default_virt_disk_driver] -> enums.VirtDiskDrivers
+        * ``virt_file_size``: Union[float, SETTINGS:default_virt_file_size] -> float
+        * ``virt_ram``: Union[int, SETTINGS:default_virt_ram] -> int
+        * ``virt_type``: Union[str, SETTINGS:default_virt_type] -> enums.VirtType
+V3.2.2:
+    * No changes
+V3.2.1:
+    * Added:
+        * ``kickstart``: Resolves as a proxy to ``autoinstall``
+V3.2.0:
+    * No changes
+V3.1.2:
+    * No changes
+V3.1.1:
+    * No changes
+V3.1.0:
+    * No changes
+V3.0.1:
+    * No changes
+V3.0.0:
+    * Added:
+        * ``set_autoinstall()``
+    * Changes:
+        * Rename: ``kickstart`` -> ``autoinstall``
+    * Removed:
+        * ``set_kickstart()`` - Please use ``set_autoinstall()``
+V2.8.5:
+    * Inital tracking of changes for the changelog.
+    * Added:
+        * ``ctime``: float
+        * ``depth``: int
+        * ``mtime``: float
+        * ``parent``: str
+        * ``uid``: str
 
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
-02110-1301  USA
+        * ``arch``: str
+        * ``kickstart``: str
+        * ``breed``: str
+        * ``comment``: str
+        * ``file``: str
+        * ``image_type``: str
+        * ``name``: str
+        * ``network_count``: int
+        * ``os_version``: str
+        * ``owners``: Union[list, SETTINGS:default_ownership]
+        * ``virt_auto_boot``: Union[bool, SETTINGS:virt_auto_boot]
+        * ``virt_bridge``: Union[str, SETTINGS:default_virt_bridge]
+        * ``virt_cpus``: int
+        * ``virt_disk_driver``: Union[str, SETTINGS:default_virt_disk_driver]
+        * ``virt_file_size``: Union[float, SETTINGS:default_virt_file_size]
+        * ``virt_path``: str
+        * ``virt_ram``: Union[int, SETTINGS:default_virt_ram]
+        * ``virt_type``: Union[str, SETTINGS:default_virt_type]
 """
-import uuid
-from typing import Union
 
-from cobbler import autoinstall_manager, enums, utils, validate
+# SPDX-License-Identifier: GPL-2.0-or-later
+# SPDX-FileCopyrightText: Copyright 2006-2009, Red Hat, Inc and Others
+# SPDX-FileCopyrightText: Michael DeHaan <michael.dehaan AT gmail>
+
+import copy
+from typing import TYPE_CHECKING, Any, List, Union
+
+from cobbler import autoinstall_manager, enums, validate
 from cobbler.cexceptions import CX
-from cobbler.items import item
+from cobbler.decorator import InheritableProperty, LazyProperty
+from cobbler.items.abstract.bootable_item import BootableItem
+from cobbler.utils import input_converters, signatures
+
+if TYPE_CHECKING:
+    from cobbler.api import CobblerAPI
 
 
-class Image(item.Item):
+class Image(BootableItem):
     """
     A Cobbler Image. Tracks a virtual or physical image, as opposed to a answer file (autoinst) led installation.
     """
@@ -33,15 +147,16 @@ class Image(item.Item):
     TYPE_NAME = "image"
     COLLECTION_TYPE = "image"
 
-    def __init__(self, api, *args, **kwargs):
+    def __init__(self, api: "CobblerAPI", *args: Any, **kwargs: Any) -> None:
         """
         Constructor
 
         :param api: The Cobbler API object which is used for resolving information.
-        :param args: The arguments which should be passed additionally to the base Item class constructor.
-        :param kwargs: The keyword arguments which should be passed additionally to the base Item class constructor.
         """
-        super().__init__(api, *args, **kwargs)
+        super().__init__(api)
+        # Prevent attempts to clear the to_dict cache before the object is initialized.
+        self._has_initialized = False
+
         self._arch = enums.Archs.X86_64
         self._autoinstall = enums.VALUE_INHERITED
         self._breed = ""
@@ -49,27 +164,31 @@ class Image(item.Item):
         self._image_type = enums.ImageTypes.DIRECT
         self._network_count = 0
         self._os_version = ""
-        self._boot_loaders = []
+        self._supported_boot_loaders: List[str] = []
+        self._boot_loaders: Union[List[str], str] = enums.VALUE_INHERITED
         self._menu = ""
-        self._virt_auto_boot = False
-        self._virt_bridge = ""
-        self._virt_cpus = 0
-        self._virt_disk_driver = enums.VirtDiskDrivers.RAW
-        self._virt_file_size = enums.VALUE_INHERITED
+        self._display_name = ""
+        self._virt_auto_boot: Union[str, bool] = enums.VALUE_INHERITED
+        self._virt_bridge = enums.VALUE_INHERITED
+        self._virt_cpus = 1
+        self._virt_disk_driver: enums.VirtDiskDrivers = enums.VirtDiskDrivers.INHERITED
+        self._virt_file_size: Union[str, float] = enums.VALUE_INHERITED
         self._virt_path = ""
-        self._virt_ram = 0
-        self._virt_type = enums.VirtType.AUTO
-        self._supported_boot_loaders = []
+        self._virt_ram: Union[str, int] = enums.VALUE_INHERITED
+        self._virt_type: Union[str, enums.VirtType] = enums.VirtType.INHERITED
 
-    def __getattr__(self, name):
+        if len(kwargs):
+            self.from_dict(kwargs)
+        if not self._has_initialized:
+            self._has_initialized = True
+
+    def __getattr__(self, name: str):
         if name == "kickstart":
             return self.autoinstall
-        raise AttributeError(
-            'Attribute "%s" did not exist on object type Image.' % name
-        )
+        raise AttributeError(f'Attribute "{name}" did not exist on object type Image.')
 
     #
-    # override some base class methods first (item.Item)
+    # override some base class methods first (BootableItem)
     #
 
     def make_clone(self):
@@ -78,30 +197,15 @@ class Image(item.Item):
 
         :return: The cloned instance of this object.
         """
-        _dict = self.to_dict()
-        cloned = Image(self.api)
-        cloned.from_dict(_dict)
-        cloned.uid = uuid.uuid4().hex
-        return cloned
-
-    def from_dict(self, dictionary: dict):
-        """
-        Initializes the object with attributes from the dictionary.
-
-        :param dictionary: The dictionary with values.
-        """
-        if "name" in dictionary:
-            self.name = dictionary["name"]
-        if "parent" in dictionary:
-            self.parent = dictionary["parent"]
-        self._remove_depreacted_dict_keys(dictionary)
-        super().from_dict(dictionary)
+        _dict = copy.deepcopy(self.to_dict())
+        _dict.pop("uid", None)
+        return Image(self.api, **_dict)
 
     #
     # specific methods for item.Image
     #
 
-    @property
+    @LazyProperty
     def arch(self) -> enums.Archs:
         """
         Represents the architecture the image has. If deployed to a physical host this should be enforced, a virtual
@@ -121,9 +225,11 @@ class Image(item.Item):
 
         :param arch: The new architecture to set.
         """
+        old_arch = self._arch
         self._arch = enums.Archs.to_enum(arch)
+        self.api.images().update_index_value(self, "arch", old_arch, self._arch)
 
-    @property
+    @InheritableProperty
     def autoinstall(self) -> str:
         """
         Property for the automatic installation file path, this must be a local file.
@@ -137,7 +243,7 @@ class Image(item.Item):
         :getter: The path relative to the template directory.
         :setter: The location of the template relative to the template base directory.
         """
-        return self._autoinstall
+        return self._resolve("autoinstall")
 
     @autoinstall.setter
     def autoinstall(self, autoinstall: str):
@@ -151,7 +257,7 @@ class Image(item.Item):
             autoinstall
         )
 
-    @property
+    @LazyProperty
     def file(self) -> str:
         """
         Stores the image location. This should be accessible on all nodes that need to access it.
@@ -175,7 +281,7 @@ class Image(item.Item):
         :param filename: The location where the image is stored.
         :raises SyntaxError: In case a protocol was found.
         """
-        if not isinstance(filename, str):
+        if not isinstance(filename, str):  # type: ignore
             raise TypeError("file must be of type str to be parsable.")
 
         if not filename:
@@ -190,7 +296,6 @@ class Image(item.Item):
         uri = filename
         auth = ""
         hostname = ""
-        path = ""
 
         if filename.find("@") != -1:
             auth, filename = filename.split("@")
@@ -200,12 +305,12 @@ class Image(item.Item):
         if filename.find(":") != -1:
             hostname, filename = filename.split(":")
         elif filename[0] != "/":
-            raise SyntaxError("invalid file: %s" % filename)
+            raise SyntaxError(f"invalid file: {filename}")
         # raise an exception if we don't have a valid path
         if len(filename) > 0 and filename[0] != "/":
-            raise SyntaxError("file contains an invalid path: %s" % filename)
+            raise SyntaxError(f"file contains an invalid path: {filename}")
         if filename.find("/") != -1:
-            path, filename = filename.rsplit("/", 1)
+            _, filename = filename.rsplit("/", 1)
 
         if len(filename) == 0:
             raise SyntaxError("missing filename")
@@ -216,7 +321,7 @@ class Image(item.Item):
 
         self._file = uri
 
-    @property
+    @LazyProperty
     def os_version(self) -> str:
         r"""
         The operating system version which the image contains.
@@ -227,7 +332,7 @@ class Image(item.Item):
         return self._os_version
 
     @os_version.setter
-    def os_version(self, os_version):
+    def os_version(self, os_version: str):
         """
         Set the operating system version with this setter.
 
@@ -235,7 +340,7 @@ class Image(item.Item):
         """
         self._os_version = validate.validate_os_version(os_version, self.breed)
 
-    @property
+    @LazyProperty
     def breed(self) -> str:
         r"""
         The operating system breed.
@@ -254,7 +359,7 @@ class Image(item.Item):
         """
         self._breed = validate.validate_breed(breed)
 
-    @property
+    @LazyProperty
     def image_type(self) -> enums.ImageTypes:
         """
         Indicates what type of image this is.
@@ -277,7 +382,7 @@ class Image(item.Item):
         :raises TypeError: In case a disallowed type was found.
         :raises ValueError: In case the conversion from str could not successfully executed.
         """
-        if not isinstance(image_type, (enums.ImageTypes, str)):
+        if not isinstance(image_type, (enums.ImageTypes, str)):  # type: ignore
             raise TypeError("image_type must be of type str or enum.ImageTypes")
         if isinstance(image_type, str):
             if not image_type:
@@ -287,19 +392,18 @@ class Image(item.Item):
                 image_type = enums.ImageTypes[image_type.upper()]
             except KeyError as error:
                 raise ValueError(
-                    "image_type choices include: %s" % list(map(str, enums.ImageTypes))
+                    f"image_type choices include: {list(map(str, enums.ImageTypes))}"
                 ) from error
         # str was converted now it must be an enum.ImageTypes
-        if not isinstance(image_type, enums.ImageTypes):
+        if not isinstance(image_type, enums.ImageTypes):  # type: ignore
             raise TypeError("image_type needs to be of type enums.ImageTypes")
         if image_type not in enums.ImageTypes:
             raise ValueError(
-                "image type must be one of the following: %s"
-                % ", ".join(list(map(str, enums.ImageTypes)))
+                f"image type must be one of the following: {', '.join(list(map(str, enums.ImageTypes)))}"
             )
         self._image_type = image_type
 
-    @property
+    @LazyProperty
     def virt_cpus(self) -> int:
         """
         The amount of vCPU cores used in case the image is being deployed on top of a VM host.
@@ -318,7 +422,7 @@ class Image(item.Item):
         """
         self._virt_cpus = validate.validate_virt_cpus(num)
 
-    @property
+    @LazyProperty
     def network_count(self) -> int:
         """
         Represents the number of virtual NICs this image has.
@@ -332,22 +436,22 @@ class Image(item.Item):
         return self._network_count
 
     @network_count.setter
-    def network_count(self, network_count: int):
+    def network_count(self, network_count: Union[int, str]):
         """
         Setter for the number of networks.
 
         :param network_count: If None or emtpy will be set to ``1``, otherwise the given integer value will be set.
         :raises TypeError: In case the network_count was not of type int.
         """
-        if network_count is None or network_count == "":
+        if network_count is None or network_count == "":  # type: ignore
             network_count = 1
-        if not isinstance(network_count, int):
+        if not isinstance(network_count, int):  # type: ignore
             raise TypeError(
                 "Field network_count of object image needs to be of type int."
             )
         self._network_count = network_count
 
-    @property
+    @InheritableProperty
     def virt_auto_boot(self) -> bool:
         r"""
         Whether the VM should be booted when booting the host or not.
@@ -355,10 +459,10 @@ class Image(item.Item):
         :getter: ``True`` means autoboot is enabled, otherwise VM is not booted automatically.
         :setter: The new state for the property.
         """
-        return self._virt_auto_boot
+        return self._resolve("virt_auto_boot")
 
     @virt_auto_boot.setter
-    def virt_auto_boot(self, num: bool):
+    def virt_auto_boot(self, num: Union[str, bool]):
         """
         Setter for the virtual automatic boot option.
 
@@ -366,7 +470,7 @@ class Image(item.Item):
         """
         self._virt_auto_boot = validate.validate_virt_auto_boot(num)
 
-    @property
+    @InheritableProperty
     def virt_file_size(self) -> float:
         r"""
         The size of the image and thus the usable size for the guest.
@@ -377,7 +481,7 @@ class Image(item.Item):
         :getter: The size of the image(s) in GB.
         :setter: The float with the new size in GB.
         """
-        return self._virt_file_size
+        return self._resolve("virt_file_size")
 
     @virt_file_size.setter
     def virt_file_size(self, num: float):
@@ -389,7 +493,7 @@ class Image(item.Item):
         """
         self._virt_file_size = validate.validate_virt_file_size(num)
 
-    @property
+    @InheritableProperty
     def virt_disk_driver(self) -> enums.VirtDiskDrivers:
         """
         The type of disk driver used for storing the image.
@@ -397,7 +501,7 @@ class Image(item.Item):
         :getter: The enum type representation of the disk driver.
         :setter: May be a ``str`` with the name of the disk driver or from the enum type directly.
         """
-        return self._virt_disk_driver
+        return self._resolve_enum("virt_disk_driver", enums.VirtDiskDrivers)
 
     @virt_disk_driver.setter
     def virt_disk_driver(self, driver: enums.VirtDiskDrivers):
@@ -408,7 +512,7 @@ class Image(item.Item):
         """
         self._virt_disk_driver = enums.VirtDiskDrivers.to_enum(driver)
 
-    @property
+    @InheritableProperty
     def virt_ram(self) -> int:
         """
         The amount of RAM given to the guest in MB.
@@ -416,7 +520,7 @@ class Image(item.Item):
         :getter: The amount of RAM currently assigned to the image.
         :setter: The new amount of ram. Must be an integer.
         """
-        return self._virt_ram
+        return self._resolve("virt_ram")
 
     @virt_ram.setter
     def virt_ram(self, num: int):
@@ -427,7 +531,7 @@ class Image(item.Item):
         """
         self._virt_ram = validate.validate_virt_ram(num)
 
-    @property
+    @InheritableProperty
     def virt_type(self) -> enums.VirtType:
         """
         The type of image used.
@@ -435,7 +539,7 @@ class Image(item.Item):
         :getter: The value of the virtual machine.
         :setter: May be of the enum type or a str which is then converted to the enum type.
         """
-        return self._virt_type
+        return self._resolve_enum("virt_type", enums.VirtType)
 
     @virt_type.setter
     def virt_type(self, vtype: enums.VirtType):
@@ -446,7 +550,7 @@ class Image(item.Item):
         """
         self._virt_type = enums.VirtType.to_enum(vtype)
 
-    @property
+    @InheritableProperty
     def virt_bridge(self) -> str:
         r"""
         The name of the virtual bridge used for networking.
@@ -456,7 +560,7 @@ class Image(item.Item):
         :getter: The name of the bridge.
         :setter: The new name of the bridge. If set to an empty ``str``, it will be taken from the settings.
         """
-        return self._virt_bridge
+        return self._resolve("virt_bridge")
 
     @virt_bridge.setter
     def virt_bridge(self, vbridge: str):
@@ -467,7 +571,7 @@ class Image(item.Item):
         """
         self._virt_bridge = validate.validate_virt_bridge(vbridge)
 
-    @property
+    @LazyProperty
     def virt_path(self) -> str:
         """
         Represents the location where the image for the VM is stored.
@@ -486,7 +590,7 @@ class Image(item.Item):
         """
         self._virt_path = validate.validate_virt_path(path)
 
-    @property
+    @LazyProperty
     def menu(self) -> str:
         """
         Property to represent the menu which this image should be put into.
@@ -507,26 +611,45 @@ class Image(item.Item):
         if menu and menu != "":
             menu_list = self.api.menus()
             if not menu_list.find(name=menu):
-                raise CX("menu %s not found" % menu)
+                raise CX(f"menu {menu} not found")
+        old_menu = self._menu
         self._menu = menu
+        self.api.images().update_index_value(self, "menu", old_menu, menu)
+
+    @LazyProperty
+    def display_name(self) -> str:
+        """
+        Returns the display name.
+
+        :getter: Returns the display name for the boot menu.
+        :setter: Sets the display name for the boot menu.
+        """
+        return self._display_name
+
+    @display_name.setter
+    def display_name(self, display_name: str):
+        """
+        Setter for the display_name of the item.
+
+        :param display_name: The new display_name. If ``None`` the display_name will be set to an emtpy string.
+        """
+        self._display_name = display_name
 
     @property
-    def supported_boot_loaders(self):
+    def supported_boot_loaders(self) -> List[str]:
         """
         Read only property which represents the subset of settable bootloaders.
 
         :getter: The bootloaders which are available for being set.
         """
-        try:
-            # If we have already loaded the supported boot loaders from the signature, use that data
-            return self._supported_boot_loaders
-        except:
-            # otherwise, refresh from the signatures / defaults
-            self._supported_boot_loaders = utils.get_supported_distro_boot_loaders(self)
-            return self._supported_boot_loaders
+        if len(self._supported_boot_loaders) == 0:
+            self._supported_boot_loaders = signatures.get_supported_distro_boot_loaders(
+                self
+            )
+        return self._supported_boot_loaders
 
-    @property
-    def boot_loaders(self) -> list:
+    @InheritableProperty
+    def boot_loaders(self) -> List[str]:
         """
         Represents the boot loaders which are able to boot this image.
 
@@ -535,10 +658,12 @@ class Image(item.Item):
         """
         if self._boot_loaders == enums.VALUE_INHERITED:
             return self.supported_boot_loaders
-        return self._boot_loaders
+        # The following line is missleading for pyright since it doesn't understand
+        # that we use only a constant with str type.
+        return self._boot_loaders  # type: ignore
 
-    @boot_loaders.setter
-    def boot_loaders(self, boot_loaders: list):
+    @boot_loaders.setter  # type: ignore[no-redef]
+    def boot_loaders(self, boot_loaders: Union[List[str], str]):
         """
         Setter of the boot loaders.
 
@@ -552,35 +677,16 @@ class Image(item.Item):
             return
 
         if boot_loaders:
-            boot_loaders_split = utils.input_string_or_list(boot_loaders)
+            boot_loaders_split = input_converters.input_string_or_list(boot_loaders)
 
             if not isinstance(boot_loaders_split, list):
                 raise TypeError("boot_loaders needs to be of type list!")
 
             if not set(boot_loaders_split).issubset(self.supported_boot_loaders):
                 raise ValueError(
-                    "Error with image %s - not all boot_loaders %s are supported %s"
-                    % (self.name, boot_loaders_split, self.supported_boot_loaders)
+                    f"Error with image {self.name} - not all boot_loaders {boot_loaders_split} are"
+                    f" supported {self.supported_boot_loaders}"
                 )
             self._boot_loaders = boot_loaders_split
         else:
             self._boot_loaders = []
-
-    @property
-    def children(self) -> list:
-        """
-        This property represents all children of an image. It should not be set manually.
-
-        :getter: The children of the image.
-        :setter: No validation is done because this is a Cobbler internal property.
-        """
-        return self._children
-
-    @children.setter
-    def children(self, value: list):
-        """
-        Setter for the children property.
-
-        :param value: The new children of the distro.
-        """
-        self._children = value

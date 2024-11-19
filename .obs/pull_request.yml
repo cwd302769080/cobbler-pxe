@@ -1,0 +1,8 @@
+workflow:
+  steps:
+    - branch_package:
+        source_project: systemsmanagement:cobbler:ci
+        source_package: cobbler
+        target_project: systemsmanagement:cobbler:ci
+  filters: 
+    event: pull_request

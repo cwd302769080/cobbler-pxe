@@ -1,16 +1,22 @@
 """
 Migration from V3.2.1 to V3.3.0
 """
+
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: 2021 Dominik Gedon <dgedon@suse.de>
 # SPDX-FileCopyrightText: 2021 Enno Gotthold <egotthold@suse.de>
 # SPDX-FileCopyrightText: Copyright SUSE LLC
 
+import glob
+import ipaddress
+import json
+import os
+import socket
+from typing import Any, Dict
 
-from schema import Optional, Schema, SchemaError
+from schema import Optional, Schema, SchemaError  # type: ignore
 
-from cobbler.settings.migrations import helper
-from cobbler.settings.migrations import V3_2_1
+from cobbler.settings.migrations import V3_2_1, helper
 
 schema = Schema(
     {
@@ -139,6 +145,7 @@ schema = Schema(
         "default_virt_type": str,
         "enable_ipxe": bool,
         "enable_menu": bool,
+        Optional("extra_settings_list", default=[]): [str],
         "http_port": int,
         "include": [str],
         Optional("iso_template_dir", default="/etc/cobbler/iso"): str,
@@ -222,12 +229,12 @@ schema = Schema(
         Optional("windows_enabled", default=False): bool,
         Optional("windows_template_dir", default="/etc/cobbler/windows"): str,
         Optional("samba_distro_share", default="DISTRO"): str,
-    },
+    },  # type: ignore
     ignore_extra_keys=False,
 )
 
 
-def validate(settings: dict) -> bool:
+def validate(settings: Dict[str, Any]) -> bool:
     """
     Checks that a given settings dict is valid according to the reference V3.3.0 schema ``schema``.
 
@@ -235,23 +242,24 @@ def validate(settings: dict) -> bool:
     :return: True if valid settings dict otherwise False.
     """
     try:
-        schema.validate(settings)
+        schema.validate(settings)  # type: ignore
     except SchemaError:
         return False
     return True
 
 
-def normalize(settings: dict) -> dict:
+def normalize(settings: Dict[str, Any]) -> Dict[str, Any]:
     """
     If data in ``settings`` is valid the validated data is returned.
 
     :param settings: The settings dict to validate.
     :return: The validated dict.
     """
-    return schema.validate(settings)
+    # We are aware of our schema and thus can safely ignore this.
+    return schema.validate(settings)  # type: ignore
 
 
-def migrate(settings: dict) -> dict:
+def migrate(settings: Dict[str, Any]) -> Dict[str, Any]:
     """
     Migration of the settings ``settings`` to version V3.3.0 settings
 
@@ -279,6 +287,11 @@ def migrate(settings: dict) -> dict:
     new_setting = helper.Setting("next_server_v4", "127.0.0.1")
     helper.key_rename(old_setting, "next_server_v4", settings)
     helper.key_set_value(new_setting, settings)
+
+    power_type = helper.key_get("power_management_default_type", settings)
+    if power_type.value == "ipmitool":
+        new_setting = helper.Setting("power_management_default_type", "ipmilanplus")
+        helper.key_set_value(new_setting, settings)
 
     # add missing keys
     # name - value pairs
@@ -362,11 +375,111 @@ def migrate(settings: dict) -> dict:
         "next_server_v6": "::1",
         "syslinux_dir": "/usr/share/syslinux",
     }
-    for (key, value) in missing_keys.items():
+    for key, value in missing_keys.items():
         new_setting = helper.Setting(key, value)
         helper.key_add(new_setting, settings)
 
     # delete removed keys
     helper.key_delete("cache_enabled", settings)
 
+    # migrate stored cobbler collections
+    migrate_cobbler_collections("/var/lib/cobbler/collections/")
+
     return normalize(settings)
+
+
+def migrate_cobbler_collections(collections_dir: str) -> None:
+    """
+    Manipulate the main Cobbler stored collections and migrate deprecated settings
+    to work with newer Cobbler versions.
+
+    :param collections_dir: The directory of Cobbler where the collections files are.
+    """
+    helper.backup_dir(collections_dir)
+    for collection_file in glob.glob(
+        os.path.join(collections_dir, "**/*.json"), recursive=True
+    ):
+        data = None
+        with open(collection_file, encoding="utf-8") as _f:
+            data = json.loads(_f.read())
+
+        # null values to empty strings
+        for key in data:
+            if data[key] is None:
+                data[key] = ""
+
+        # boot_loader -> boot_loaders (preserving possible existing value)
+        if "boot_loader" in data and "boot_loaders" not in data:
+            data["boot_loaders"] = data.pop("boot_loader")
+        elif "boot_loader" in data:
+            data.pop("boot_loader")
+
+        # next_server -> next_server_v4, next_server_v6
+        if "next_server" in data:
+            addr = data["next_server"]
+            if addr == "<<inherit>>":
+                data["next_server_v4"] = addr
+                data["next_server_v6"] = addr
+                data.pop("next_server")
+            else:
+                try:
+                    _ip = ipaddress.ip_address(addr)
+                    if isinstance(_ip, ipaddress.IPv4Address):
+                        data["next_server_v4"] = data.pop("next_server")
+                    elif isinstance(_ip, ipaddress.IPv6Address):  # type: ignore
+                        data["next_server_v6"] = data.pop("next_server")
+                except ValueError:
+                    # next_server is a hostname so we need to resolve hostname
+                    try:
+                        data["next_server_v4"] = socket.getaddrinfo(
+                            addr,
+                            None,
+                            socket.AF_INET,
+                        )[1][4][0]
+                    except OSError:
+                        pass
+                    try:
+                        data["next_server_v6"] = socket.getaddrinfo(
+                            addr,
+                            None,
+                            socket.AF_INET6,
+                        )[1][4][0]
+                    except OSError:
+                        pass
+
+                    if "next_server_v4" not in data and "next_server_v6" not in data:
+                        print(
+                            "ERROR: Neither IPv4 nor IPv6 addresses can be resolved for "
+                            f"'next server': {data['next_server']}. Please check your DNS configuration."
+                        )
+                    else:
+                        data.pop("next_server")
+
+        # enable_gpxe -> enable_ipxe
+        if "enable_gpxe" in data:
+            data["enable_ipxe"] = data.pop("enable_gpxe")
+
+        # ipmitool power_type -> ipmilan power_type
+        if "power_type" in data and data["power_type"] == "ipmitool":
+            data["power_type"] = "ipmilanplus"
+
+        # serial_device (str) -> serial_device (int)
+        if "serial_device" in data and data["serial_device"] == "":
+            data["serial_device"] = -1
+        elif "serial_device" in data and isinstance(data["serial_device"], str):
+            try:
+                data["serial_device"] = int(data["serial_device"])
+            except ValueError as exc:
+                print(f"ERROR casting 'serial_device' attribute to int: {exc}")
+
+        # serial_baud_rate (str) -> serial_baud_rate (int)
+        if "serial_baud_rate" in data and data["serial_baud_rate"] == "":
+            data["serial_baud_rate"] = -1
+        elif "serial_baud_rate" in data and isinstance(data["serial_baud_rate"], str):
+            try:
+                data["serial_baud_rate"] = int(data["serial_baud_rate"])
+            except ValueError as exc:
+                print(f"ERROR casting 'serial_baud_rate' attribute to int: {exc}")
+
+        with open(collection_file, "w", encoding="utf-8") as _f:
+            _f.write(json.dumps(data))

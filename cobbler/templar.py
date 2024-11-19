@@ -1,45 +1,35 @@
 """
-Cobbler uses Cheetah templates for lots of stuff, but there's
-some additional magic around that to deal with snippets/etc.
-(And it's not spelled wrong!)
-
-Copyright 2008-2009, Red Hat, Inc and Others
-Michael DeHaan <michael.dehaan AT gmail>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
-02110-1301  USA
+Cobbler uses Cheetah templates for lots of stuff, but there's some additional magic around that to deal with
+snippets/etc. (And it's not spelled wrong!)
 """
+
+# SPDX-License-Identifier: GPL-2.0-or-later
+# SPDX-FileCopyrightText: Copyright 2006-2009, Red Hat, Inc and Others
+# SPDX-FileCopyrightText: Michael DeHaan <michael.dehaan AT gmail>
+
 import logging
 import os
 import os.path
 import pprint
 import re
-from typing import Optional, Union, TextIO
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, TextIO, Union
 
 from cobbler import utils
 from cobbler.cexceptions import CX
 from cobbler.template_api import CobblerTemplate
+from cobbler.utils import filesystem_helpers
+
+if TYPE_CHECKING:
+    from cobbler.api import CobblerAPI
 
 try:
     import jinja2
 
-    jinja2_available = True
+    JINJA2_AVAILABLE = True
 except ModuleNotFoundError:
-    # FIXME: log a message here
-    jinja2_available = False
-    pass
+    # pylint: disable-next=invalid-name
+    jinja2 = None  # type: ignore
+    JINJA2_AVAILABLE = False  # type: ignore
 
 
 class Templar:
@@ -48,17 +38,17 @@ class Templar:
     via our self-defined API in this class.
     """
 
-    def __init__(self, api):
+    def __init__(self, api: "CobblerAPI"):
         """
         Constructor
 
         :param api: The main API instance which is used by the current running server.
         """
         self.settings = api.settings()
-        self.last_errors = []
+        self.last_errors: List[Any] = []
         self.logger = logging.getLogger()
 
-    def check_for_invalid_imports(self, data: str):
+    def check_for_invalid_imports(self, data: str) -> None:
         """
         Ensure that Cheetah code is not importing Python modules that may allow for advanced privileges by ensuring we
         whitelist the imports that we allow.
@@ -82,9 +72,9 @@ class Templar:
     def render(
         self,
         data_input: Union[TextIO, str],
-        search_table: dict,
+        search_table: Dict[Any, Any],
         out_path: Optional[str],
-        template_type="default",
+        template_type: str = "default",
     ) -> str:
         """
         Render data_input back into a file.
@@ -102,10 +92,10 @@ class Templar:
             raw_data = data_input
         lines = raw_data.split("\n")
 
-        if template_type is None:
+        if template_type is None:  # type: ignore
             raise ValueError('"template_type" can\'t be "None"!')
 
-        if not isinstance(template_type, str):
+        if not isinstance(template_type, str):  # type: ignore
             raise TypeError('"template_type" must be of type "str"!')
 
         if template_type not in ("default", "jinja2", "cheetah"):
@@ -127,19 +117,16 @@ class Templar:
         if template_type == "cheetah":
             data_out = self.render_cheetah(raw_data, search_table)
         elif template_type == "jinja2":
-            if jinja2_available:
-                data_out = self.render_jinja2(raw_data, search_table)
-            else:
-                return "# ERROR: JINJA2 NOT AVAILABLE. Maybe you need to install python-jinja2?\n"
+            data_out = self.render_jinja2(raw_data, search_table)
         else:
-            return "# ERROR: UNSUPPORTED TEMPLATE TYPE (%s)" % str(template_type)
+            return f"# ERROR: UNSUPPORTED TEMPLATE TYPE ({str(template_type)})"
 
         # Now apply some magic post-filtering that is used by "cobbler import" and some other places. Forcing folks to
         # double escape things would be very unwelcome.
-        hp = search_table.get("http_port", "80")
+        http_port = search_table.get("http_port", "80")
         server = search_table.get("server", self.settings.server)
-        if hp not in (80, "80"):
-            repstr = "%s:%s" % (server, hp)
+        if http_port not in (80, "80"):
+            repstr = f"{server}:{http_port}"
         else:
             repstr = server
         search_table["http_server"] = repstr
@@ -147,9 +134,7 @@ class Templar:
         # string replacements for @@xyz@@ in data_out with prior regex lookups of keys
         regex = r"@@[\S]*?@@"
         regex_matches = re.finditer(regex, data_out, re.MULTILINE)
-        matches = set(
-            [match.group() for match_num, match in enumerate(regex_matches, start=1)]
-        )
+        matches = {match.group() for _, match in enumerate(regex_matches, start=1)}
         for match in matches:
             data_out = data_out.replace(match, search_table[match.strip("@@")])
 
@@ -159,13 +144,13 @@ class Templar:
 
         # if requested, write the data out to a file
         if out_path is not None:
-            utils.mkdir(os.path.dirname(out_path))
-            with open(out_path, "w+") as file_descriptor:
+            filesystem_helpers.mkdir(os.path.dirname(out_path))
+            with open(out_path, "w", encoding="UTF-8") as file_descriptor:
                 file_descriptor.write(data_out)
 
         return data_out
 
-    def render_cheetah(self, raw_data, search_table: dict) -> str:
+    def render_cheetah(self, raw_data: str, search_table: Dict[Any, Any]) -> str:
         """
         Render data_input back into a file.
 
@@ -192,12 +177,11 @@ class Templar:
                         (server, directory) = rest.split(":", 2)
                     except Exception as error:
                         raise SyntaxError(
-                            "Invalid syntax for NFS path given during import: %s"
-                            % search_table["tree"]
+                            f"Invalid syntax for NFS path given during import: {search_table['tree']}"
                         ) from error
-                    line = "nfs --server %s --dir %s" % (server, directory)
+                    line = f"nfs --server {server} --dir {directory}"
                     # But put the URL part back in so koan can still see what the original value was
-                    line += "\n" + "#url --url=%s" % search_table["tree"]
+                    line += "\n" + f"#url --url={search_table['tree']}"
                 newdata += line + "\n"
             raw_data = newdata
 
@@ -222,19 +206,21 @@ class Templar:
         )
 
         try:
-            generated_template_class = template(searchList=[search_table])
-            data_out = str(generated_template_class)
-            self.last_errors = generated_template_class.errorCatcher().listErrors()
-            if self.last_errors:
+            generated_template_class = template(searchList=[search_table])  # type: ignore
+            data_out = str(generated_template_class)  # type: ignore
+            self.last_errors = generated_template_class.errorCatcher().listErrors()  # type: ignore
+            if self.last_errors:  # type: ignore
                 self.logger.warning("errors were encountered rendering the template")
-                self.logger.warning("\n" + pprint.pformat(self.last_errors))
+                self.logger.warning("\n%s", pprint.pformat(self.last_errors))  # type: ignore
         except Exception as error:
             self.logger.error(utils.cheetah_exc(error))
-            raise CX("Error templating file, check cobbler.log for more details")
+            raise CX(
+                "Error templating file, check cobbler.log for more details"
+            ) from error
 
         return data_out
 
-    def render_jinja2(self, raw_data: str, search_table: dict) -> str:
+    def render_jinja2(self, raw_data: str, search_table: Dict[Any, Any]) -> str:
         """
         Render data_input back into a file.
 
@@ -242,7 +228,8 @@ class Templar:
         :param search_table: is a dict of metadata keys and values
         :return: The rendered Jinja2 Template.
         """
-
+        if not JINJA2_AVAILABLE or jinja2 is None:
+            return "# ERROR: JINJA2 NOT AVAILABLE. Maybe you need to install python-jinja2?\n"
         try:
             if self.settings and self.settings.jinja2_includedir:
                 template = jinja2.Environment(
@@ -253,7 +240,7 @@ class Templar:
             data_out = template.render(search_table)
         except Exception as exc:
             self.logger.warning("errors were encountered rendering the template")
-            self.logger.warning(exc.__str__())
+            self.logger.warning(str(exc))
             data_out = "# EXCEPTION OCCURRED DURING JINJA2 TEMPLATE PROCESSING\n"
 
         return data_out

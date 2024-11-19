@@ -1,15 +1,22 @@
 """
-Migration from V3.3.1 to V3.3.2
+Migration from V3.3.3 to V3.4.0
 """
+
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: 2022 Dominik Gedon <dgedon@suse.de>
 # SPDX-FileCopyrightText: Copyright SUSE LLC
+
+import configparser
+import glob
+import json
+import os
 import pathlib
+from configparser import ConfigParser
+from typing import Any, Dict
 
-from schema import Optional, Schema, SchemaError
+from schema import Optional, Schema, SchemaError  # type: ignore
 
-from cobbler.settings.migrations import helper
-from cobbler.settings.migrations import V3_3_2
+from cobbler.settings.migrations import V3_3_5, helper
 
 schema = Schema(
     {
@@ -33,6 +40,8 @@ schema = Schema(
         Optional("bootloaders_modules"): list,
         Optional("bootloaders_shim_folder"): str,
         Optional("bootloaders_shim_file"): str,
+        Optional("secure_boot_grub_folder"): str,
+        Optional("secure_boot_grub_file"): str,
         Optional("bootloaders_ipxe_folder"): str,
         Optional("syslinux_dir"): str,
         Optional("syslinux_memdisk_folder"): str,
@@ -60,11 +69,14 @@ schema = Schema(
         Optional("default_template_type"): str,
         Optional("default_virt_bridge"): str,
         Optional("default_virt_disk_driver"): str,
-        Optional("default_virt_file_size"): int,
+        Optional("default_virt_file_size"): float,
         Optional("default_virt_ram"): int,
         Optional("default_virt_type"): str,
+        Optional("dnsmasq_ethers_file"): str,
+        Optional("dnsmasq_hosts_file"): str,
         Optional("enable_ipxe"): bool,
         Optional("enable_menu"): bool,
+        Optional("extra_settings_list"): [str],
         Optional("http_port"): int,
         Optional("iso_template_dir"): str,
         Optional("jinja2_includedir"): str,
@@ -94,8 +106,6 @@ schema = Schema(
         Optional("manage_genders"): bool,
         Optional("manage_rsync"): bool,
         Optional("manage_tftpd"): bool,
-        Optional("mgmt_classes"): [str],
-        Optional("mgmt_parameters"): dict,
         Optional("next_server_v4"): str,
         Optional("next_server_v6"): str,
         Optional("nsupdate_enabled"): bool,
@@ -116,6 +126,7 @@ schema = Schema(
         Optional("redhat_management_permissive"): bool,
         Optional("redhat_management_server"): str,
         Optional("redhat_management_key"): str,
+        Optional("uyuni_authentication_endpoint"): str,
         Optional("register_new_installs"): bool,
         Optional("remove_old_puppet_certs_automatically"): bool,
         Optional("replicate_repo_rsync_options"): str,
@@ -145,12 +156,149 @@ schema = Schema(
         Optional("windows_enabled"): bool,
         Optional("windows_template_dir"): str,
         Optional("samba_distro_share"): str,
-    },
+        Optional("modules"): {
+            Optional("authentication"): {
+                Optional("module"): str,
+                Optional("hash_algorithm"): str,
+            },
+            Optional("authorization"): {Optional("module"): str},
+            Optional("dns"): {Optional("module"): str},
+            Optional("dhcp"): {Optional("module"): str},
+            Optional("tftpd"): {Optional("module"): str},
+            Optional("serializers"): {Optional("module"): str},
+        },
+        Optional("mongodb"): {
+            Optional("host"): str,
+            Optional("port"): int,
+        },
+        Optional("cache_enabled"): bool,
+        Optional("autoinstall_scheme"): str,
+        Optional("lazy_start"): bool,
+        Optional("memory_indexes"): {
+            Optional("distro"): {
+                Optional("uid"): {
+                    Optional("property"): str,
+                    Optional("nonunique"): bool,
+                    Optional("disabled"): bool,
+                },
+                Optional("arch"): {
+                    Optional("property"): str,
+                    Optional("nonunique"): bool,
+                    Optional("disabled"): bool,
+                },
+            },
+            Optional("image"): {
+                Optional("uid"): {
+                    Optional("property"): str,
+                    Optional("nonunique"): bool,
+                    Optional("disabled"): bool,
+                },
+                Optional("arch"): {
+                    Optional("property"): str,
+                    Optional("nonunique"): bool,
+                    Optional("disabled"): bool,
+                },
+                Optional("menu"): {
+                    Optional("property"): str,
+                    Optional("nonunique"): bool,
+                    Optional("disabled"): bool,
+                },
+            },
+            Optional("menu"): {
+                Optional("uid"): {
+                    Optional("property"): str,
+                    Optional("nonunique"): bool,
+                    Optional("disabled"): bool,
+                },
+                Optional("parent"): {
+                    Optional("property"): str,
+                    Optional("nonunique"): bool,
+                    Optional("disabled"): bool,
+                },
+            },
+            Optional("profile"): {
+                Optional("uid"): {
+                    Optional("property"): str,
+                    Optional("nonunique"): bool,
+                    Optional("disabled"): bool,
+                },
+                Optional("parent"): {
+                    Optional("property"): str,
+                    Optional("nonunique"): bool,
+                    Optional("disabled"): bool,
+                },
+                Optional("distro"): {
+                    Optional("property"): str,
+                    Optional("nonunique"): bool,
+                    Optional("disabled"): bool,
+                },
+                Optional("arch"): {
+                    Optional("property"): str,
+                    Optional("nonunique"): bool,
+                    Optional("disabled"): bool,
+                },
+                Optional("menu"): {
+                    Optional("property"): str,
+                    Optional("nonunique"): bool,
+                    Optional("disabled"): bool,
+                },
+                Optional("repos"): {
+                    Optional("property"): str,
+                    Optional("nonunique"): bool,
+                    Optional("disabled"): bool,
+                },
+            },
+            Optional("repo"): {
+                Optional("uid"): {
+                    Optional("property"): str,
+                    Optional("nonunique"): bool,
+                    Optional("disabled"): bool,
+                },
+            },
+            Optional("system"): {
+                Optional("uid"): {
+                    Optional("property"): str,
+                    Optional("nonunique"): bool,
+                    Optional("disabled"): bool,
+                },
+                Optional("image"): {
+                    Optional("property"): str,
+                    Optional("nonunique"): bool,
+                    Optional("disabled"): bool,
+                },
+                Optional("profile"): {
+                    Optional("property"): str,
+                    Optional("nonunique"): bool,
+                    Optional("disabled"): bool,
+                },
+                Optional("mac_address"): {
+                    Optional("property"): str,
+                    Optional("nonunique"): bool,
+                    Optional("disabled"): bool,
+                },
+                Optional("ip_address"): {
+                    Optional("property"): str,
+                    Optional("nonunique"): bool,
+                    Optional("disabled"): bool,
+                },
+                Optional("ipv6_address"): {
+                    Optional("property"): str,
+                    Optional("nonunique"): bool,
+                    Optional("disabled"): bool,
+                },
+                Optional("dns_name"): {
+                    Optional("property"): str,
+                    Optional("nonunique"): bool,
+                    Optional("disabled"): bool,
+                },
+            },
+        },
+    },  # type: ignore
     ignore_extra_keys=False,
 )
 
 
-def validate(settings: dict) -> bool:
+def validate(settings: Dict[str, Any]) -> bool:
     """
     Checks that a given settings dict is valid according to the reference V3.4.0 schema ``schema``.
 
@@ -158,13 +306,13 @@ def validate(settings: dict) -> bool:
     :return: True if valid settings dict otherwise False.
     """
     try:
-        schema.validate(settings)
+        schema.validate(settings)  # type: ignore
     except SchemaError:
         return False
     return True
 
 
-def normalize(settings: dict) -> dict:
+def normalize(settings: Dict[str, Any]) -> Dict[str, Any]:
     """
     If data in ``settings`` is valid the validated data is returned.
 
@@ -172,10 +320,11 @@ def normalize(settings: dict) -> dict:
     :return: The validated dict.
     """
 
-    return schema.validate(settings)
+    # We are aware of our schema and thus can safely ignore this.
+    return schema.validate(settings)  # type: ignore
 
 
-def migrate(settings: dict) -> dict:
+def migrate(settings: Dict[str, Any]) -> Dict[str, Any]:
     """
     Migration of the settings ``settings`` to version V3.4.0 settings
 
@@ -183,11 +332,78 @@ def migrate(settings: dict) -> dict:
     :return: The migrated dict
     """
 
-    if not V3_3_2.validate(settings):
-        raise SchemaError("V3.3.2: Schema error while validating")
+    if not V3_3_5.validate(settings):
+        raise SchemaError("V3.3.5: Schema error while validating")
 
     # rename keys and update their value if needed
     include = settings.pop("include")
+    include = settings.pop("mgmt_classes")
+    include = settings.pop("mgmt_parameters")
+
+    # Do mongodb.conf migration
+    mongodb_config = "/etc/cobbler/mongodb.conf"
+    modules_config_parser = ConfigParser()
+    try:
+        modules_config_parser.read(mongodb_config)
+    except configparser.Error as cp_error:
+        raise configparser.Error(
+            "Could not read Cobbler MongoDB config file!"
+        ) from cp_error
+    settings["mongodb"] = {
+        "host": modules_config_parser.get("connection", "host", fallback="localhost"),
+        "port": modules_config_parser.getint("connection", "port", fallback=27017),
+    }
+    mongodb_config_path = pathlib.Path(mongodb_config)
+    if mongodb_config_path.exists():
+        mongodb_config_path.unlink()
+
+    # Do mongodb.conf migration
+    modules_config = "/etc/cobbler/modules.conf"
+    modules_config_parser = ConfigParser()
+    try:
+        modules_config_parser.read(mongodb_config)
+    except configparser.Error as cp_error:
+        raise configparser.Error(
+            "Could not read Cobbler modules.conf config file!"
+        ) from cp_error
+    settings["modules"] = {
+        "authentication": {
+            "module": modules_config_parser.get(
+                "authentication", "module", fallback="authentication.configfile"
+            ),
+            "hash_algorithm": modules_config_parser.get(
+                "authentication", "hash_algorithm", fallback="sha3_512"
+            ),
+        },
+        "authorization": {
+            "module": modules_config_parser.get(
+                "authorization", "module", fallback="authorization.allowall"
+            )
+        },
+        "dns": {
+            "module": modules_config_parser.get(
+                "dns", "module", fallback="managers.bind"
+            )
+        },
+        "dhcp": {
+            "module": modules_config_parser.get(
+                "dhcp", "module", fallback="managers.isc"
+            )
+        },
+        "tftpd": {
+            "module": modules_config_parser.get(
+                "tftpd", "module", fallback="managers.in_tftpd"
+            )
+        },
+        "serializers": {
+            "module": modules_config_parser.get(
+                "serializers", "module", fallback="serializers.file"
+            )
+        },
+    }
+    modules_config_path = pathlib.Path(modules_config)
+    if modules_config_path.exists():
+        modules_config_path.unlink()
 
     # Drop defaults
     from cobbler.settings import Settings
@@ -204,4 +420,40 @@ def migrate(settings: dict) -> dict:
         if include_directory.is_dir() and include_directory.exists():
             include_directory.rmdir()
 
+    # migrate stored cobbler collections
+    migrate_cobbler_collections("/var/lib/cobbler/collections/")
+
     return normalize(settings)
+
+
+def migrate_cobbler_collections(collections_dir: str) -> None:
+    """
+    Manipulate the main Cobbler stored collections and migrate deprecated settings
+    to work with newer Cobbler versions.
+
+    :param collections_dir: The directory of Cobbler where the collections files are.
+    """
+    helper.backup_dir(collections_dir)
+    for collection_file in glob.glob(
+        os.path.join(collections_dir, "**/*.json"), recursive=True
+    ):
+        data = None
+        with open(collection_file, encoding="utf-8") as _f:
+            data = json.loads(_f.read())
+
+        # migrate interface.interface_type from emptry string to "NA"
+        if "interfaces" in data:
+            for iface in data["interfaces"]:
+                if data["interfaces"][iface]["interface_type"] == "":
+                    data["interfaces"][iface]["interface_type"] = "NA"
+
+        # Remove fetchable_files from the items
+        if "fetchable_files" in data:
+            data.pop("fetchable_files", None)
+
+        # Migrate boot_files to template_files
+        if "boot_files" in data and "template_files" in data:
+            data["template_files"] = {**data["template_files"], **data["boot_files"]}
+
+        with open(collection_file, "w", encoding="utf-8") as _f:
+            _f.write(json.dumps(data))

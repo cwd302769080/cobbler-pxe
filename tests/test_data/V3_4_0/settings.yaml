@@ -74,7 +74,7 @@ bootloaders_formats:
       - net
       - ofnet
   x86_64-efi:
-    binary_name: grubx86.efi
+    binary_name: grubx64.efi
     extra_modules:
       - chain
       - efinet
@@ -127,13 +127,15 @@ bootloaders_modules:
   - gcry_rijndael
   - gcry_sha1
   - gcry_sha256
-syslinux_dir: '@@syslinux_dir@@'
-syslinux_memdisk_folder: '@@memdisk_folder@@'
-syslinux_pxelinux_folder: '@@pxelinux_folder@@'
-grub2_mod_dir: '@@grub_mod_folder@@'
-bootloaders_shim_folder: '@@shim_folder@@'
-bootloaders_shim_file: '@@shim_file@@'
-bootloaders_ipxe_folder: '@@ipxe_folder@@'
+syslinux_dir: '/usr/share/syslinux'
+syslinux_memdisk_folder: '/usr/share/syslinux'
+syslinux_pxelinux_folder: '/usr/share/syslinux'
+grub2_mod_dir: '/usr/share/grub2'
+bootloaders_shim_folder: '/usr/share/efi/*/'
+bootloaders_shim_file: 'shim\.efi'
+secure_boot_grub_folder: '/usr/share/efi/*/'
+secure_boot_grub_file: 'grub\.efi'
+bootloaders_ipxe_folder: '/usr/share/ipxe/'
 
 # Email out a report when Cobbler finishes installing a system.
 # enabled: set to true to turn this feature on
@@ -159,9 +161,8 @@ cheetah_import_whitelist:
  - "netaddr"
 
 # Default "createrepo_flags" to use for new repositories. If you have createrepo >= 0.4.10, consider
-# "-c cache --update -C", which can dramatically improve your "cobbler reposync" time. "-s sha" enables working with
-# Fedora repos from F11/F12 from EL-4 or EL-5 without python-hashlib installed (which is not available on EL-4)
-createrepo_flags: "-c cache -s sha"
+# "--cachedir=cache --update", which can dramatically improve your "cobbler reposync" time.
+createrepo_flags: "--cachedir=cache --update"
 
 # if no autoinstall template is specified to profile add, use this template (path is relative to template root)
 autoinstall: "default.ks"
@@ -204,10 +205,10 @@ default_template_type: "cheetah"
 # "virbr0".  This can be overriden on a per-profile
 # basis or at the koan command line though this saves
 # typing to just set it here to the most common option.
-default_virt_bridge: xenbr0
+default_virt_bridge: virbr0
 
 # use this as the default disk size for virt guests (GB)
-default_virt_file_size: 5
+default_virt_file_size: 5.0
 
 # use this as the default memory size for virt guests (MB)
 default_virt_ram: 512
@@ -216,7 +217,7 @@ default_virt_ram: 512
 # is set on the profile/system, what virtualization type
 # should be assumed?  Values: xenpv, xenfv, qemu, vmware
 # (NOTE: this does not change what virt_type is chosen by import)
-default_virt_type: xenpv
+default_virt_type: kvm
 
 # enable iPXE booting? Enabling this option will cause Cobbler
 # to copy the undionly.kpxe file to the tftp root directory,
@@ -260,14 +261,6 @@ ldap_tls_certfile: ''
 ldap_tls_cacertdir: ''
 ldap_tls_cipher_suite: ''
 ldap_tls_reqcert: ''
-
-# Cobbler has a feature that allows for integration with config management
-# systems such as Puppet.  The following parameters work in conjunction with
-# --mgmt-classes  and are described in further detail at:
-# https://github.com/cobbler/cobbler/wiki/Using-cobbler-with-a-configuration-management-system
-mgmt_classes: []
-mgmt_parameters:
- from_cobbler: true
 
 # if enabled, this setting ensures that puppet is installed during
 # machine provision, a client certificate is generated and a
@@ -344,7 +337,7 @@ bind_chroot_path: ""
 bind_manage_ipmi: true
 
 # set to path where zonefiles of bind/named server are located.
-bind_zonefile_path: "@@bind_zonefiles@@"
+bind_zonefile_path: "/var/lib/named"
 
 # set to the ip address of the master bind DNS server for creating secondary
 # bind configuration files
@@ -365,8 +358,8 @@ manage_tftpd: true
 
 # This variable contains the location of the tftpboot directory. If this directory is not present Cobbler does not
 # start.
-# Default: @@tftproot@@
-tftpboot_location: "@@tftproot@@"
+# Default: "/var/lib/tftpboot"
+tftpboot_location: "/var/lib/tftpboot"
 
 # set to true to enable Cobbler's RSYNC management features.
 manage_rsync: false
@@ -421,7 +414,7 @@ redhat_management_key: ""
 register_new_installs: false
 
 # Flags to use for dnf's reposync. You can exclude some packages by adding --exclude.
-# For example exclude source packages: --exclude=\\*.src
+# For example exclude source packages: --exclude=*.src
 reposync_flags: "--newest-only --delete --refresh --remote-time"
 
 # Flags to use for rysync's reposync. If flag 'a' is used then createrepo
@@ -485,7 +478,7 @@ virt_auto_boot: true
 
 # Cobbler's web directory. Don't change this setting -- see the Wiki on "Relocating your Cobbler install" if your "/var"
 # partition is not large enough.
-webdir: "@@webroot@@/cobbler"
+webdir: "/var/www/cobbler"
 
 # Directories that will not get wiped and recreated on a "cobbler sync".
 webdir_whitelist:
@@ -575,7 +568,7 @@ puppet_version: 2
 
 # Signatures
 signature_path: "/var/lib/cobbler/distro_signatures.json"
-signature_url: "https://cobbler.github.io/signatures/3.0.x/latest.json"
+signature_url: "https://cobbler.github.io/libcobblersignatures/data/v2/distro_signatures.json"
 
 # Set to "true" to enable Cobbler's dynamic DNS updates.
 nsupdate_enabled: false
@@ -597,3 +590,41 @@ windows_template_dir: "/etc/cobbler/windows"
 
 # Samba share name for distros
 samba_distro_share: "DISTRO"
+
+# Cobbler modules.conf replacement
+modules:
+  authentication:
+    module: "authentication.configfile"
+    hash_algorithm: "sha3_512"
+  authorization:
+    module: "authorization.allowall"
+  dns:
+    module: "managers.bind"
+  dhcp:
+    module: "managers.isc"
+  tftpd:
+    module: "managers.in_tftpd"
+  serializers:
+    module: "serializers.file"
+
+# mongodb.conf replacement
+mongodb:
+  host: "localhost"
+  port: 27017
+
+# A cache of some internal operations can speed up their execution, but can slow down
+# editing objects.
+cache_enabled: false
+
+
+# Set to true to speed up the start of the Cobbler. When storing collections as files, the directory with the names
+# of the collection elements will be scanned without reading and parsing the files themselves. In the case of storing
+# collections in the database, a projection query is made that includes only the names of the collection elements.
+# The first time an attribute of an element other than a name is accessed, a full read of all other attributes will be
+# performed, and a recursive full read of all elements on which this element depends. At startup, a background task is
+# also launched, which, when idle, fills in all the properties of the elements of the collections.
+# Suitable for configurations with a large number of elements placed on a slow device (HDD, network).
+lazy_start: false
+
+# list settings keys to exclude from validation - helpful to validate and migrate custom settings
+extra_settings_list: []

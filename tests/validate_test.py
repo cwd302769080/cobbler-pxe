@@ -1,9 +1,18 @@
+"""
+Tests that validate the functionality of the module that is responsible for validating data before it is consumed by
+the application.
+"""
+
 import uuid
 from ipaddress import AddressValueError, NetmaskValueError
+from typing import Any
 
 import pytest
 
-from cobbler import enums, utils, validate
+from cobbler import enums, validate
+from cobbler.api import CobblerAPI
+from cobbler.utils import signatures
+
 from tests.conftest import does_not_raise
 
 
@@ -16,7 +25,7 @@ from tests.conftest import does_not_raise
         ("host.cobbler.org", "host.cobbler.org", does_not_raise()),
     ],
 )
-def test_hostname(input_dnsname, expected_result, expected_exception):
+def test_hostname(input_dnsname: Any, expected_result: str, expected_exception: Any):
     # Arrange
 
     # Act
@@ -37,7 +46,7 @@ def test_hostname(input_dnsname, expected_result, expected_exception):
         (0, "", pytest.raises(TypeError)),
     ],
 )
-def test_ipv4_address(input_addr, expected_result, expected_exception):
+def test_ipv4_address(input_addr: Any, expected_result: str, expected_exception: Any):
     # Arrange
     # Act
     with expected_exception:
@@ -49,7 +58,7 @@ def test_ipv4_address(input_addr, expected_result, expected_exception):
 
 def test_validate_os_version():
     # Arrange
-    utils.load_signatures("/var/lib/cobbler/distro_signatures.json")
+    signatures.load_signatures("/var/lib/cobbler/distro_signatures.json")
 
     # Act
     result = validate.validate_os_version("rhel4", "redhat")
@@ -60,7 +69,7 @@ def test_validate_os_version():
 
 def test_validate_breed():
     # Arrange
-    utils.load_signatures("/var/lib/cobbler/distro_signatures.json")
+    signatures.load_signatures("/var/lib/cobbler/distro_signatures.json")
 
     # Act
     result = validate.validate_breed("redhat")
@@ -69,7 +78,7 @@ def test_validate_breed():
     assert result == "redhat"
 
 
-def test_set_repos(cobbler_api):
+def test_set_repos(cobbler_api: CobblerAPI):
     # Arrange
 
     # Act
@@ -105,7 +114,7 @@ def test_set_virt_file_size():
         ("Test", does_not_raise()),
     ],
 )
-def test_set_virt_auto_boot(test_autoboot, expectation):
+def test_set_virt_auto_boot(test_autoboot: Any, expectation: Any):
     # Arrange
 
     # Act
@@ -128,7 +137,7 @@ def test_set_virt_auto_boot(test_autoboot, expectation):
         ("", does_not_raise()),
     ],
 )
-def test_set_virt_pxe_boot(test_input, expected_exception):
+def test_set_virt_pxe_boot(test_input: Any, expected_exception: Any):
     # Arrange
 
     # Act
@@ -183,7 +192,7 @@ def test_validate_virt_path():
         ("test", pytest.raises(TypeError)),
     ],
 )
-def test_set_virt_cpus(value, expected_exception):
+def test_set_virt_cpus(value: Any, expected_exception: Any):
     # Arrange
 
     # Act
@@ -233,7 +242,7 @@ def test_set_serial_baud_rate():
         ("http://fe80::989c:95ff:fe42:47bf/test", True),
     ],
 )
-def test_validate_boot_remote_file(test_value, expected_result):
+def test_validate_boot_remote_file(test_value: Any, expected_result: bool):
     # Arrange
 
     # Act
@@ -259,7 +268,7 @@ def test_validate_boot_remote_file(test_value, expected_result):
         ("(tftp,10.0.0.1:8080)/test", True),
     ],
 )
-def test_validate_grub_remote_file(test_value, expected_result):
+def test_validate_grub_remote_file(test_value: Any, expected_result: bool):
     # Arrange
 
     # Act

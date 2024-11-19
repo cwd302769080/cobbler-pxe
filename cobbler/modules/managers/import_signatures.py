@@ -1,25 +1,12 @@
 """
-Copyright 2006-2009, Red Hat, Inc and Others
-Michael DeHaan <michael.dehaan AT gmail>
-John Eckersberg <jeckersb@redhat.com>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
-02110-1301  USA
+Cobbler Module that contains the code for ``cobbler import`` and provides the magic to automatically detect an ISO image
+OS and version.
 """
 
-from typing import Dict, List, Callable, Any, Optional
+# SPDX-License-Identifier: GPL-2.0-or-later
+# SPDX-FileCopyrightText: Copyright 2006-2009, Red Hat, Inc and Others
+# SPDX-FileCopyrightText: Michael DeHaan <michael.dehaan AT gmail>
+# SPDX-FileCopyrightText: John Eckersberg <jeckersb@redhat.com>
 
 import glob
 import gzip
@@ -28,31 +15,47 @@ import os.path
 import re
 import shutil
 import stat
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Tuple,
+    Union,
+)
 
-import magic
+import magic  # type: ignore
 
-HAS_HIVEX = True
-try:
-    import hivex
-    from hivex.hive_types import REG_SZ
-except Exception:
-    HAS_HIVEX = False
-
-from cobbler.items import profile, distro
-from cobbler.cexceptions import CX
 from cobbler import enums, utils
-from cobbler.manager import ManagerModule
+from cobbler.cexceptions import CX
+from cobbler.modules.managers import ManagerModule
+from cobbler.utils import filesystem_helpers
 
-import cobbler.items.repo as item_repo
+if TYPE_CHECKING:
+    from cobbler.api import CobblerAPI
+    from cobbler.items.distro import Distro
+
+try:
+    import hivex  # type: ignore
+    from hivex.hive_types import REG_EXPAND_SZ, REG_SZ  # type: ignore
+
+    HAS_HIVEX = True
+except ImportError:
+    REG_SZ = None  # type: ignore[reportConstantRedefinition]
+    REG_EXPAND_SZ = None  # type: ignore[reportConstantRedefinition]
+    HAS_HIVEX = False  # type: ignore[reportConstantRedefinition]
 
 # Import aptsources module if available to obtain repo mirror.
 try:
-    from aptsources import distro as debdistro
-    from aptsources import sourceslist
+    from aptsources import distro as debdistro  # type: ignore
+    from aptsources import sourceslist  # type: ignore
 
-    apt_available = True
-except:
-    apt_available = False
+    APT_AVAILABLE = True
+except ImportError:
+    APT_AVAILABLE = False  # type: ignore
 
 MANAGER = None
 
@@ -64,17 +67,19 @@ def register() -> str:
     return "manage/import"
 
 
-def import_walker(top: str, func: Callable, arg: Any):
+def import_walker(
+    top: str, func: Callable[[Any, str, List[str]], None], arg: Any
+) -> None:
     """
     Directory tree walk with callback function.
 
     For each directory in the directory tree rooted at top (including top itself, but excluding '.' and '..'), call
-    ``func(arg, dirname, fnames)``. dirname is the name of the directory, and fnames a list of the names of the files
-    and subdirectories in dirname (excluding '.' and '..').  ``func`` may modify the ``fnames`` list in-place (e.g. via
-    ``del`` or ``slice`` assignment), and walk will only recurse into the subdirectories whose names remain in
-    ``fnames``; this can be used to implement a filter, or to impose a specific order of visiting. No semantics are
-    defined for, or required of, ``arg``, beyond that arg is always passed to ``func``. It can be used, e.g., to pass
-    a filename pattern, or a mutable object designed to accumulate statistics.
+    ``func(arg, dirname, filenames)``. dirname is the name of the directory, and filenames a list of the names of the
+    files and subdirectories in dirname (excluding '.' and '..').  ``func`` may modify the ``filenames`` list in-place
+    (e.g. via ``del`` or ``slice`` assignment), and walk will only recurse into the subdirectories whose names remain
+    in ``filenames``; this can be used to implement a filter, or to impose a specific order of visiting. No semantics
+    are defined for, or required of, ``arg``, beyond that arg is always passed to ``func``. It can be used, e.g., to
+    pass a filename pattern, or a mutable object designed to accumulate statistics.
 
     :param top: The most top directory for which func should be run.
     :param func: A function which is called as described in the above description.
@@ -86,13 +91,13 @@ def import_walker(top: str, func: Callable, arg: Any):
         return
     func(arg, top, names)
     for name in names:
-        name = os.path.join(top, name)
+        path_name = os.path.join(top, name)
         try:
-            st = os.lstat(name)
+            file_stats = os.lstat(path_name)
         except os.error:
             continue
-        if stat.S_ISDIR(st.st_mode):
-            import_walker(name, func, arg)
+        if stat.S_ISDIR(file_stats.st_mode):
+            import_walker(path_name, func, arg)
 
 
 class _ImportSignatureManager(ManagerModule):
@@ -105,13 +110,13 @@ class _ImportSignatureManager(ManagerModule):
         """
         return "import/signatures"
 
-    def __init__(self, api):
+    def __init__(self, api: "CobblerAPI") -> None:
         super().__init__(api)
 
-        self.signature = None
-        self.found_repos = {}
+        self.signature: Any = None
+        self.found_repos: Dict[str, int] = {}
 
-    def get_file_lines(self, filename: str):
+    def get_file_lines(self, filename: str) -> Union[List[str], List[bytes]]:
         """
         Get lines from a file, which may or may not be compressed. If compressed then it will be uncompressed using
         ``gzip`` as the algorithm.
@@ -119,40 +124,69 @@ class _ImportSignatureManager(ManagerModule):
         :param filename: The name of the file to be read.
         :return: An array with all the lines.
         """
-        ftype = magic.detect_from_filename(filename)
-        if ftype.mime_type == "application/gzip":
+        ftype = magic.detect_from_filename(filename)  # type: ignore
+        if ftype.mime_type == "application/gzip":  # type: ignore
             try:
-                with gzip.open(filename, "r") as f:
-                    return f.readlines()
-            except:
+                with gzip.open(filename, "r") as file_fd:
+                    return file_fd.readlines()
+            except Exception:
                 pass
-        if ftype.mime_type == "application/x-ms-wim":
+        if (
+            ftype.mime_type == "application/x-ms-wim"  # type: ignore
+            or self.file_version < (5, 37)
+            and filename.lower().endswith(".wim")
+        ):
             cmd = "/usr/bin/wiminfo"
             if os.path.exists(cmd):
-                cmd = "%s %s" % (cmd, filename)
+                cmd = f"{cmd} {filename}"
                 return utils.subprocess_get(cmd).splitlines()
 
             self.logger.info("no %s found, please install wimlib-utils", cmd)
-        elif ftype.mime_type == "text/plain":
-            with open(filename, "r") as f:
-                return f.readlines()
+        elif ftype.mime_type == "text/plain":  # type: ignore
+            with open(filename, "r", encoding="UTF-8") as file_fd:
+                return file_fd.readlines()
         else:
             self.logger.info(
-                'Could not detect the filetype and read the content of file "%s". Returning nothing.',
+                'Could not detect the filetype "%s" and read the content of file "%s". Returning nothing.',
+                ftype.mime_type,  # type: ignore
                 filename,
             )
         return []
+
+    def get_file_version(self) -> Tuple[int, int]:
+        """
+        This calls file and asks for the version number.
+
+        :return: The major file version number.
+        """
+        cmd = "/usr/bin/file"
+        if os.path.exists(cmd):
+            cmd = f"{cmd} -v"
+            version_list = utils.subprocess_get(cmd).splitlines()
+            if len(version_list) < 1:
+                return (0, 0)
+            version_list = version_list[0].split("-")
+            if len(version_list) != 2 or version_list[0] != "file":
+                return (0, 0)
+            version_list = version_list[1].split(".")
+            if len(version_list) < 2:
+                return (0, 0)
+            version: List[int] = []
+            for v in version_list:
+                version.append(int(v))
+            return (version[0], version[1])
+        return (0, 0)
 
     def run(
         self,
         path: str,
         name: str,
-        network_root=None,
-        autoinstall_file=None,
+        network_root: Optional[str] = None,
+        autoinstall_file: Optional[str] = None,
         arch: Optional[str] = None,
-        breed=None,
-        os_version=None,
-    ):
+        breed: Optional[str] = None,
+        os_version: Optional[str] = None,
+    ) -> None:
         """
         This is the main entry point in a manager. It is a required function for import modules.
 
@@ -171,6 +205,7 @@ class _ImportSignatureManager(ManagerModule):
         self.arch = arch
         self.breed = breed
         self.os_version = os_version
+        self.file_version: Tuple[int, int] = self.get_file_version()
 
         self.path = path
         self.rootdir = path
@@ -186,127 +221,30 @@ class _ImportSignatureManager(ManagerModule):
         if self.autoinstall_file == "":
             self.autoinstall_file = None
 
-        if self.os_version == "":
+        if self.os_version == "":  # type: ignore
             self.os_version = None
 
         if self.network_root == "":
             self.network_root = None
 
-        if self.os_version and not self.breed:
+        if self.os_version and not self.breed:  # type: ignore
             utils.die(
                 "OS version can only be specified when a specific breed is selected"
             )
 
         self.signature = self.scan_signatures()
         if not self.signature:
-            error_msg = "No signature matched in %s" % path
+            error_msg = f"No signature matched in {path}"
             self.logger.error(error_msg)
             raise CX(error_msg)
 
         # now walk the filesystem looking for distributions that match certain patterns
         self.logger.info("Adding distros from path %s:", self.path)
-        distros_added = []
+        if self.breed == "windows":  # type: ignore
+            self.import_winpe()
+
+        distros_added: List["Distro"] = []
         import_walker(self.path, self.distro_adder, distros_added)
-
-        if len(distros_added) == 0:
-            if self.breed == "windows":
-                cmd_path = "/usr/bin/wimexport"
-                bootwim_path = os.path.join(self.path, "sources", "boot.wim")
-                dest_path = os.path.join(self.path, "boot")
-                if os.path.exists(cmd_path) and os.path.exists(bootwim_path):
-                    winpe_path = os.path.join(dest_path, "winpe.wim")
-                    if not os.path.exists(dest_path):
-                        utils.mkdir(dest_path)
-                    rc = utils.subprocess_call(
-                        [cmd_path, bootwim_path, "1", winpe_path, "--boot"], shell=False
-                    )
-                    if rc == 0:
-                        cmd = [
-                            "/usr/bin/wimdir %s 1 | /usr/bin/grep -i '^/Windows/Boot/PXE$'"
-                            % winpe_path
-                        ]
-                        pxe_path = utils.subprocess_get(cmd, shell=True)[0:-1]
-                        cmd = [
-                            "/usr/bin/wimdir %s 1 | /usr/bin/grep -i '^/Windows/System32/config/SOFTWARE$'"
-                            % winpe_path
-                        ]
-                        config_path = utils.subprocess_get(cmd, shell=True)[0:-1]
-                        cmd_path = "/usr/bin/wimextract"
-                        rc = utils.subprocess_call(
-                            [
-                                cmd_path,
-                                bootwim_path,
-                                "1",
-                                "%s/pxeboot.n12" % pxe_path,
-                                "%s/bootmgr.exe" % pxe_path,
-                                config_path,
-                                "--dest-dir=%s" % dest_path,
-                                "--no-acls",
-                                "--no-attributes",
-                            ],
-                            shell=False,
-                        )
-                        if rc == 0:
-                            if HAS_HIVEX:
-                                software = os.path.join(
-                                    dest_path, os.path.basename(config_path)
-                                )
-                                h = hivex.Hivex(software, write=True)
-                                root = h.root()
-                                node = h.node_get_child(root, "Microsoft")
-                                node = h.node_get_child(node, "Windows NT")
-                                node = h.node_get_child(node, "CurrentVersion")
-                                h.node_set_value(
-                                    node,
-                                    {
-                                        "key": "SystemRoot",
-                                        "t": REG_SZ,
-                                        "value": "x:\\Windows\0".encode(
-                                            encoding="utf-16le"
-                                        ),
-                                    },
-                                )
-                                node = h.node_get_child(node, "WinPE")
-
-                                # remove the key InstRoot from the registry
-                                values = h.node_values(node)
-                                new_values = []
-
-                                for value in values:
-                                    keyname = h.value_key(value)
-
-                                    if keyname == "InstRoot":
-                                        continue
-
-                                    val = h.node_get_value(node, keyname)
-                                    valtype = h.value_type(val)[0]
-                                    value2 = h.value_value(val)[1]
-                                    valobject = {
-                                        "key": keyname,
-                                        "t": int(valtype),
-                                        "value": value2,
-                                    }
-                                    new_values.append(valobject)
-
-                                h.node_set_values(node, new_values)
-                                h.commit(software)
-
-                                cmd_path = "/usr/bin/wimupdate"
-                                rc = utils.subprocess_call(
-                                    [
-                                        cmd_path,
-                                        winpe_path,
-                                        "--command=add %s %s" % (software, config_path),
-                                    ],
-                                    shell=False,
-                                )
-                                os.remove(software)
-                            else:
-                                self.logger.info(
-                                    "python3-hivex not found. If you need Automatic Windows "
-                                    "Installation support, please install."
-                                )
-                            import_walker(self.path, self.distro_adder, distros_added)
 
         if len(distros_added) == 0:
             self.logger.warning("No distros imported, bailing out")
@@ -318,17 +256,17 @@ class _ImportSignatureManager(ManagerModule):
             # FIXME: this automagic is not possible (yet) without mirroring
             self.repo_finder(distros_added)
 
-    def scan_signatures(self):
+    def scan_signatures(self) -> Optional[Any]:
         """
         Loop through the signatures, looking for a match for both the signature directory and the version file.
         """
         sigdata = self.api.get_signatures()
         # self.logger.debug("signature cache: %s" % str(sigdata))
         for breed in list(sigdata["breeds"].keys()):
-            if self.breed and self.breed != breed:
+            if self.breed and self.breed != breed:  # type: ignore
                 continue
             for version in list(sigdata["breeds"][breed].keys()):
-                if self.os_version and self.os_version != version:
+                if self.os_version and self.os_version != version:  # type: ignore
                     continue
                 for sig in sigdata["breeds"][breed][version].get("signatures", []):
                     pkgdir = os.path.join(self.path, sig)
@@ -341,7 +279,7 @@ class _ImportSignatureManager(ManagerModule):
                         f_re = re.compile(
                             sigdata["breeds"][breed][version]["version_file"]
                         )
-                        for (root, subdir, fnames) in os.walk(self.path):
+                        for root, subdir, fnames in os.walk(self.path):
                             for fname in fnames + subdir:
                                 if f_re.match(fname):
                                     # if the version file regex exists, we use it to scan the contents of the target
@@ -367,9 +305,9 @@ class _ImportSignatureManager(ManagerModule):
                                         breed,
                                         version,
                                     )
-                                    if not self.breed:
+                                    if not self.breed:  # type: ignore
                                         self.breed = breed
-                                    if not self.os_version:
+                                    if not self.os_version:  # type: ignore
                                         self.os_version = version
                                     if not self.autoinstall_file:
                                         self.autoinstall_file = sigdata["breeds"][
@@ -380,7 +318,7 @@ class _ImportSignatureManager(ManagerModule):
         return None
 
     # required function for import modules
-    def get_valid_arches(self) -> list:
+    def get_valid_arches(self) -> List[Any]:
         """
         Get all valid architectures from the signature file.
 
@@ -390,7 +328,7 @@ class _ImportSignatureManager(ManagerModule):
             return sorted(self.signature["supported_arches"], key=lambda s: -1 * len(s))
         return []
 
-    def get_valid_repo_breeds(self) -> list:
+    def get_valid_repo_breeds(self) -> List[Any]:
         """
         Get all valid repository architectures from the signatures file.
 
@@ -400,13 +338,15 @@ class _ImportSignatureManager(ManagerModule):
             return self.signature["supported_repo_breeds"]
         return []
 
-    def distro_adder(self, distros_added, dirname: str, fnames):
+    def distro_adder(
+        self, distros_added: List["Distro"], dirname: str, filenames: List[str]
+    ) -> None:
         """
         This is an import_walker routine that finds distributions in the directory to be scanned and then creates them.
 
         :param distros_added: Unknown what this currently does.
         :param dirname: Unknown what this currently does.
-        :param fnames: Unknown what this currently does.
+        :param filenames: Unknown what this currently does.
         """
 
         re_krn = re.compile(self.signature["kernel_file"])
@@ -418,15 +358,15 @@ class _ImportSignatureManager(ManagerModule):
         pae_initrd = None
         pae_kernel = None
 
-        for x in fnames:
-            adtls = []
+        for filename in filenames:
+            adtls: List["Distro"] = []
 
             # Most of the time we just want to ignore isolinux directories, unless this is one of the oddball distros
             # where we do want it.
             if dirname.find("isolinux") != -1 and not self.signature["isolinux_ok"]:
                 continue
 
-            fullname = os.path.join(dirname, x)
+            fullname = os.path.join(dirname, filename)
             if os.path.islink(fullname) and os.path.isdir(fullname):
                 if fullname.startswith(self.path):
                     # Prevent infinite loop with Sci Linux 5
@@ -435,32 +375,33 @@ class _ImportSignatureManager(ManagerModule):
                 self.logger.info("following symlink: %s", fullname)
                 import_walker(fullname, self.distro_adder, distros_added)
 
-            if re_img.match(x):
-                if x.find("PAE") == -1:
-                    initrd = os.path.join(dirname, x)
+            if re_img.match(filename):
+                if filename.find("PAE") == -1:
+                    initrd = os.path.join(dirname, filename)
                 else:
-                    pae_initrd = os.path.join(dirname, x)
+                    pae_initrd = os.path.join(dirname, filename)
 
-            if re_krn.match(x):
-                if x.find("PAE") == -1:
-                    kernel = os.path.join(dirname, x)
+            if re_krn.match(filename):
+                if filename.find("PAE") == -1:
+                    kernel = os.path.join(dirname, filename)
                 else:
-                    pae_kernel = os.path.join(dirname, x)
+                    pae_kernel = os.path.join(dirname, filename)
+            elif self.breed == "windows" and "wimboot" in self.signature["kernel_file"]:  # type: ignore
+                kernel = os.path.join(self.settings.tftpboot_location, "wimboot")
 
             # if we've collected a matching kernel and initrd pair, turn them in and add them to the list
             if initrd is not None and kernel is not None:
-                adtls.append(self.add_entry(dirname, kernel, initrd))
+                adtls.extend(self.add_entry(dirname, kernel, initrd))
                 kernel = None
                 initrd = None
             elif pae_initrd is not None and pae_kernel is not None:
-                adtls.append(self.add_entry(dirname, pae_kernel, pae_initrd))
+                adtls.extend(self.add_entry(dirname, pae_kernel, pae_initrd))
                 pae_kernel = None
                 pae_initrd = None
 
-            for adtl in adtls:
-                distros_added.extend(adtl)
+            distros_added.extend(adtls)
 
-    def add_entry(self, dirname: str, kernel, initrd):
+    def add_entry(self, dirname: str, kernel: str, initrd: str) -> List["Distro"]:
         """
         When we find a directory with a valid kernel/initrd in it, create the distribution objects as appropriate and
         save them. This includes creating xen and rescue distros/profiles if possible.
@@ -481,8 +422,7 @@ class _ImportSignatureManager(ManagerModule):
         else:
             if self.arch and self.arch not in archs:
                 utils.die(
-                    "Given arch (%s) not found on imported tree %s"
-                    % (self.arch, self.path)
+                    f"Given arch ({self.arch}) not found on imported tree {self.path}"
                 )
 
         if len(archs) == 0:
@@ -491,10 +431,10 @@ class _ImportSignatureManager(ManagerModule):
                 dirname,
             )
             return []
-        elif len(archs) > 1:
+        if len(archs) > 1:
             self.logger.warning("- Warning : Multiple archs found : %s", archs)
 
-        distros_added = []
+        distros_added: List["Distro"] = []
         for pxe_arch in archs:
             name = proposed_name + "-" + pxe_arch
             existing_distro = self.distros.find(name=name)
@@ -504,59 +444,51 @@ class _ImportSignatureManager(ManagerModule):
                     "skipping import, as distro name already exists: %s", name
                 )
                 continue
-            else:
-                self.logger.info("creating new distro: %s", name)
-                new_distro = distro.Distro(self.api)
 
             if name.find("-autoboot") != -1:
                 # this is an artifact of some EL-3 imports
                 continue
 
-            new_distro.name = name
-            new_distro.kernel = kernel
-            new_distro.initrd = initrd
-            new_distro.arch = pxe_arch
-            new_distro.breed = self.breed
-            new_distro.os_version = self.os_version
-            new_distro.kernel_options = self.signature.get("kernel_options", "")
-            new_distro.kernel_options_post = self.signature.get(
-                "kernel_options_post", ""
+            new_distro = self.api.new_distro(
+                name=name,
+                kernel=kernel,
+                initrd=initrd,
+                arch=pxe_arch,
+                breed=self.breed,  # type: ignore
+                os_version=self.os_version,  # type: ignore
+                kernel_options=self.signature.get("kernel_options", {}),
+                kernel_options_post=self.signature.get("kernel_options_post", {}),
+                template_files=self.signature.get("template_files", {}),
             )
-            new_distro.template_files = self.signature.get("template_files", "")
 
+            # This logic is temporary until https://github.com/cobbler/libcobblersignatures/issues/77 is implemented
             boot_files: Dict[str, str] = {}
             for boot_file in self.signature["boot_files"]:
-                boot_files["$local_img_path/%s" % boot_file] = "%s/%s" % (
-                    self.path,
-                    boot_file,
-                )
-            new_distro.boot_files = boot_files
+                boot_files[f"$local_img_path/{boot_file}"] = f"{self.path}/{boot_file}"
+            # template_files must be a dict because during creation of the distro we explicitly set it as such.
+            # Also the property template_files is NOT inheritable.
+            new_distro.template_files.update(boot_files)
 
             self.configure_tree_location(new_distro)
 
-            self.distros.add(new_distro, save=True)
+            self.api.add_distro(new_distro, save=True)
             distros_added.append(new_distro)
 
-            # see if the profile name is already used, if so, skip it and
-            # do not modify the existing profile
-
+            # see if the profile name is already used, if so, skip it and do not modify the existing profile
             existing_profile = self.profiles.find(name=name)
-
-            if existing_profile is None:
-                self.logger.info("creating new profile: %s", name)
-                new_profile = profile.Profile(self.api)
-            else:
+            if existing_profile is not None:
                 self.logger.info(
                     "skipping existing profile, name already exists: %s", name
                 )
                 continue
 
-            new_profile.name = name
-            new_profile.distro = name
-            new_profile.autoinstall = self.autoinstall_file
+            new_profile = self.api.new_profile(
+                name=name,
+                distro=name,
+                autoinstall=self.autoinstall_file,  # type: ignore
+            )
 
-            # depending on the name of the profile we can
-            # define a good virt-type for usage with koan
+            # depending on the name of the profile we can define a good virt-type for usage with koan
             if name.find("-xen") != -1:
                 new_profile.virt_type = enums.VirtType.XENPV
             elif name.find("vmware") != -1:
@@ -564,9 +496,15 @@ class _ImportSignatureManager(ManagerModule):
             else:
                 new_profile.virt_type = enums.VirtType.KVM
 
-            if self.breed == "windows":
+            if self.breed == "windows":  # type: ignore
                 dest_path = os.path.join(self.path, "boot")
-                bootmgr_path = os.path.join(dest_path, "bootmgr.exe")
+                kernel_path = f"http://@@http_server@@/images/{name}/wimboot"
+                if new_distro.os_version in ("xp", "2003"):
+                    kernel_path = "pxeboot.0"
+                bootmgr = "bootmgr.exe"
+                if "wimboot" in kernel:
+                    bootmgr = "bootmgr.efi"
+                bootmgr_path = os.path.join(dest_path, bootmgr)
                 bcd_path = os.path.join(dest_path, "bcd")
                 winpe_path = os.path.join(dest_path, "winpe.wim")
                 if (
@@ -575,18 +513,19 @@ class _ImportSignatureManager(ManagerModule):
                     and os.path.exists(winpe_path)
                 ):
                     new_profile.autoinstall_meta = {
-                        "kernel": os.path.basename(kernel),
-                        "bootmgr": "bootmgr.exe",
+                        "kernel": kernel_path,
+                        "bootmgr": bootmgr,
                         "bcd": "bcd",
                         "winpe": "winpe.wim",
                         "answerfile": "autounattended.xml",
+                        "post_install_script": "post_install.cmd",
                     }
 
-            self.profiles.add(new_profile, save=True)
+            self.api.add_profile(new_profile, save=True)
 
         return distros_added
 
-    def learn_arch_from_tree(self) -> list:
+    def learn_arch_from_tree(self) -> List[Any]:
         """
         If a distribution is imported from DVD, there is a good chance the path doesn't contain the arch and we should
         add it back in so that it's part of the meaningful name ... so this code helps figure out the arch name.  This
@@ -595,7 +534,7 @@ class _ImportSignatureManager(ManagerModule):
         :return: The guessed architecture from a distribution dvd.
         """
 
-        result = {}
+        result: Dict[str, int] = {}
 
         # FIXME : this is called only once, should not be a walk
         import_walker(self.path, self.arch_walker, result)
@@ -613,7 +552,7 @@ class _ImportSignatureManager(ManagerModule):
 
         return list(result.keys())
 
-    def arch_walker(self, foo: dict, dirname: str, fnames: list):
+    def arch_walker(self, foo: Dict[Any, Any], dirname: str, fnames: List[Any]) -> None:
         """
         Function for recursively searching through a directory for a kernel file matching a given architecture, called
         by ``learn_arch_from_tree()``
@@ -626,29 +565,29 @@ class _ImportSignatureManager(ManagerModule):
         re_krn = re.compile(self.signature["kernel_arch"])
 
         # try to find a kernel header RPM and then look at it's arch.
-        for x in fnames:
-            if re_krn.match(x):
+        for fname in fnames:
+            if re_krn.match(fname):
                 if self.signature["kernel_arch_regex"]:
                     re_krn2 = re.compile(self.signature["kernel_arch_regex"])
-                    krn_lines = self.get_file_lines(os.path.join(dirname, x))
+                    krn_lines = self.get_file_lines(os.path.join(dirname, fname))
                     for line in krn_lines:
-                        m = re_krn2.match(line)
-                        if m:
-                            for group in m.groups():
+                        match_obj = re_krn2.match(line)
+                        if match_obj:
+                            for group in match_obj.groups():
                                 group = group.lower()
                                 if group in self.get_valid_arches():
                                     foo[group] = 1
                 else:
                     for arch in self.get_valid_arches():
-                        if x.find(arch) != -1:
+                        if fname.find(arch) != -1:
                             foo[arch] = 1
                             break
                     for arch in ["i686", "amd64"]:
-                        if x.find(arch) != -1:
+                        if fname.find(arch) != -1:
                             foo[arch] = 1
                             break
 
-    def get_proposed_name(self, dirname: str, kernel=None) -> str:
+    def get_proposed_name(self, dirname: str, kernel: Optional[str] = None) -> str:
         """
         Given a directory name where we have a kernel/initrd pair, try to autoname the distribution (and profile) object
         based on the contents of that path.
@@ -657,6 +596,9 @@ class _ImportSignatureManager(ManagerModule):
         :param kernel: The kernel of that distro.
         :return: The name which is recommended.
         """
+
+        if self.name is None:
+            raise ValueError("Name cannot be None!")
 
         if self.network_root is not None:
             name = self.name
@@ -672,7 +614,7 @@ class _ImportSignatureManager(ManagerModule):
 
         # Clear out some cruft from the proposed name
         name = name.replace("--", "-")
-        for x in (
+        for name_suffix in (
             "-netboot",
             "-ubuntu-installer",
             "-amd64",
@@ -689,7 +631,7 @@ class _ImportSignatureManager(ManagerModule):
             "var-www-cobbler-",
             "distro_mirror-",
         ):
-            name = name.replace(x, "")
+            name = name.replace(name_suffix, "")
 
         # remove any architecture name related string, as real arch will be appended later
         name = name.replace("chrp", "ppc64")
@@ -709,11 +651,11 @@ class _ImportSignatureManager(ManagerModule):
                 "386",
                 "amd",
             ]:
-                name = name.replace("%s%s" % (separator, arch), "")
+                name = name.replace(f"{separator}{arch}", "")
 
         return name
 
-    def configure_tree_location(self, distribution: distro.Distro):
+    def configure_tree_location(self, distribution: "Distro") -> None:
         """
         Once a distribution is identified, find the part of the distribution that has the URL in it that we want to use
         for automating the Linux distribution installation, and create a autoinstall_meta variable $tree that contains
@@ -735,34 +677,36 @@ class _ImportSignatureManager(ManagerModule):
                         "trying symlink: %s -> %s", str(base), str(dest_link)
                     )
                     os.symlink(base, dest_link)
-                except:
+                except Exception:
                     # FIXME: This shouldn't happen but I've seen it ... debug ...
                     self.logger.warning(
                         "symlink creation failed: %s, %s", base, dest_link
                     )
-            tree = "http://@@http_server@@/cblr/links/%s" % distribution.name
+            protocol = self.api.settings().autoinstall_scheme
+            tree = f"{protocol}://@@http_server@@/cblr/links/{distribution.name}"
             self.set_install_tree(distribution, tree)
         else:
             # Where we assign the automated installation file source is relative to our current directory and the input
             # start directory in the crawl. We find the path segments between and tack them on the network source
             # path to find the explicit network path to the distro that Anaconda can digest.
-            tail = utils.path_tail(self.path, base)
+            tail = filesystem_helpers.path_tail(self.path, base)
             tree = self.network_root[:-1] + tail
             self.set_install_tree(distribution, tree)
 
-    def set_install_tree(self, distribution: distro.Distro, url: str):
+    def set_install_tree(self, distribution: "Distro", url: str) -> None:
         """
         Simple helper function to set the tree automated installation metavariable.
 
         :param distribution: The distribution object for which the install tree should be set.
         :param url: The url for the tree.
         """
-        distribution.autoinstall_meta["tree"] = url
+        self.logger.debug('Setting "tree" for distro "%s"', distribution.name)
+        distribution.autoinstall_meta = {"tree": url}
 
     # ==========================================================================
     # Repo Functions
 
-    def repo_finder(self, distros_added: List[distro.Distro]):
+    def repo_finder(self, distros_added: List["Distro"]) -> None:
         """
         This routine looks through all distributions and tries to find any applicable repositories in those
         distributions for post-install usage.
@@ -771,7 +715,7 @@ class _ImportSignatureManager(ManagerModule):
         """
         for repo_breed in self.get_valid_repo_breeds():
             self.logger.info("checking for %s repo(s)", repo_breed)
-            repo_adder = None
+            repo_adder: Optional[Callable[["Distro"], None]] = None
             if repo_breed == "yum":
                 repo_adder = self.yum_repo_adder
             elif repo_breed == "rhn":
@@ -789,7 +733,7 @@ class _ImportSignatureManager(ManagerModule):
             for current_distro_added in distros_added:
                 if current_distro_added.kernel.find("distro_mirror") != -1:
                     repo_adder(current_distro_added)
-                    self.distros.add(
+                    self.api.add_distro(
                         current_distro_added, save=True, with_triggers=False
                     )
                 else:
@@ -801,7 +745,7 @@ class _ImportSignatureManager(ManagerModule):
     # ==========================================================================
     # yum-specific
 
-    def yum_repo_adder(self, distro: distro.Distro):
+    def yum_repo_adder(self, distro: "Distro") -> None:
         """
         For yum, we recursively scan the rootdir for repos to add
 
@@ -810,7 +754,9 @@ class _ImportSignatureManager(ManagerModule):
         self.logger.info("starting descent into %s for %s", self.rootdir, distro.name)
         import_walker(self.rootdir, self.yum_repo_scanner, distro)
 
-    def yum_repo_scanner(self, distro: distro.Distro, dirname: str, fnames):
+    def yum_repo_scanner(
+        self, distro: "Distro", dirname: str, fnames: Iterable[str]
+    ) -> None:
         """
         This is an import_walker routine that looks for potential yum repositories to be added to the configuration for
         post-install usage.
@@ -821,11 +767,11 @@ class _ImportSignatureManager(ManagerModule):
         """
 
         matches = {}
-        for x in fnames:
-            if x == "base" or x == "repodata":
+        for fname in fnames:
+            if fname in ("base", "repodata"):
                 self.logger.info("processing repo at : %s", dirname)
                 # only run the repo scanner on directories that contain a comps.xml
-                gloob1 = glob.glob("%s/%s/*comps*.xml" % (dirname, x))
+                gloob1 = glob.glob(f"{dirname}/{fname}/*comps*.xml")
                 if len(gloob1) >= 1:
                     if dirname in matches:
                         self.logger.info(
@@ -841,7 +787,7 @@ class _ImportSignatureManager(ManagerModule):
                     )
                     continue
 
-    def yum_process_comps_file(self, comps_path: str, distribution: distro.Distro):
+    def yum_process_comps_file(self, comps_path: str, distribution: "Distro") -> None:
         """
         When importing Fedora/EL certain parts of the install tree can also be used as yum repos containing packages
         that might not yet be available via updates in yum. This code identifies those areas. Existing repodata will be
@@ -861,7 +807,7 @@ class _ImportSignatureManager(ManagerModule):
 
         # figure out what our comps file is ...
         self.logger.info("looking for %s/%s/*comps*.xml", comps_path, masterdir)
-        files = glob.glob("%s/%s/*comps*.xml" % (comps_path, masterdir))
+        files = glob.glob(f"{comps_path}/{masterdir}/*comps*.xml")
         if len(files) == 0:
             self.logger.info(
                 "no comps found here: %s", os.path.join(comps_path, masterdir)
@@ -885,16 +831,14 @@ class _ImportSignatureManager(ManagerModule):
                 self.settings.webdir,
                 "distro_mirror",
                 "config",
-                "%s-%s.repo" % (distribution.name, counter),
+                f"{distribution.name}-{counter}.repo",
             )
 
-            repo_url = (
-                "http://@@http_server@@/cobbler/distro_mirror/config/%s-%s.repo"
-                % (distribution.name, counter)
-            )
-            repo_url2 = "http://@@http_server@@/cobbler/distro_mirror/%s" % urlseg
+            protocol = self.api.settings().autoinstall_scheme
+            repo_url = f"{protocol}://@@http_server@@/cobbler/distro_mirror/config/{distribution.name}-{counter}.repo"
+            repo_url2 = f"{protocol}://@@http_server@@/cobbler/distro_mirror/{urlseg}"
 
-            distribution.source_repos.append([repo_url, repo_url2])
+            distribution.source_repos.extend([repo_url, repo_url2])
 
             config_dir = os.path.dirname(fname)
             if not os.path.exists(config_dir):
@@ -904,11 +848,11 @@ class _ImportSignatureManager(ManagerModule):
             # the @@http_server@@ left as templating magic.
             # repo_url2 is actually no longer used. (?)
 
-            with open(fname, "w+") as config_file:
-                config_file.write("[core-%s]\n" % counter)
-                config_file.write("name=core-%s\n" % counter)
+            with open(fname, "w", encoding="UTF-8") as config_file:
+                config_file.write(f"[core-{counter}]\n")
+                config_file.write(f"name=core-{counter}\n")
                 config_file.write(
-                    "baseurl=http://@@http_server@@/cobbler/distro_mirror/%s\n" % urlseg
+                    f"baseurl={protocol}://@@http_server@@/cobbler/distro_mirror/{urlseg}\n"
                 )
                 config_file.write("enabled=1\n")
                 config_file.write("gpgcheck=0\n")
@@ -932,18 +876,18 @@ class _ImportSignatureManager(ManagerModule):
                 self.found_repos[comps_path] = 1
                 # For older distros, if we have a "base" dir parallel with "repodata", we need to copy comps.xml up
                 # one...
-                p1 = os.path.join(comps_path, "repodata", "comps.xml")
-                p2 = os.path.join(comps_path, "base", "comps.xml")
-                if os.path.exists(p1) and os.path.exists(p2):
-                    shutil.copyfile(p1, p2)
-        except:
+                path_1 = os.path.join(comps_path, "repodata", "comps.xml")
+                path_2 = os.path.join(comps_path, "base", "comps.xml")
+                if os.path.exists(path_1) and os.path.exists(path_2):
+                    shutil.copyfile(path_1, path_2)
+        except Exception:
             self.logger.error("error launching createrepo (not installed?), ignoring")
             utils.log_exc()
 
     # ==========================================================================
     # apt-specific
 
-    def apt_repo_adder(self, distribution: distro.Distro):
+    def apt_repo_adder(self, distribution: "Distro") -> None:
         """
         Automatically import apt repositories when importing signatures.
 
@@ -952,18 +896,21 @@ class _ImportSignatureManager(ManagerModule):
         self.logger.info("adding apt repo for %s", distribution.name)
         # Obtain repo mirror from APT if available
         mirror = ""
-        if apt_available:
+        if APT_AVAILABLE:
             # Example returned URL: http://us.archive.ubuntu.com/ubuntu
             mirror = self.get_repo_mirror_from_apt()
         if not mirror:
             mirror = "http://archive.ubuntu.com/ubuntu"
 
-        repo = item_repo.Repo(self.api)
+        repo = self.api.new_repo()
         repo.breed = enums.RepoBreeds.APT
-        repo.arch = distribution.arch
+        repo.arch = enums.RepoArchs.to_enum(distribution.arch.value)
         repo.keep_updated = True
         repo.apt_components = "main universe"  # TODO: make a setting?
-        repo.apt_dists = "%s %s-updates %s-security" % ((distribution.os_version,) * 3)
+        repo.apt_dists = (
+            f"{distribution.os_version} {distribution.os_version}-updates"
+            f"{distribution.os_version}-security"
+        )
         repo.name = distribution.name
         repo.os_version = distribution.os_version
 
@@ -971,16 +918,15 @@ class _ImportSignatureManager(ManagerModule):
             repo.mirror = mirror
         else:
             # NOTE : The location of the mirror should come from timezone
-            repo.mirror = "http://ftp.%s.debian.org/debian/dists/%s" % (
-                "us",
-                distribution.os_version,
+            repo.mirror = (
+                f"http://ftp.{'us'}.debian.org/debian/dists/{distribution.os_version}"
             )
 
         self.logger.info("Added repos for %s", distribution.name)
         self.api.add_repo(repo)
         # FIXME: Add the found/generated repos to the profiles that were created during the import process
 
-    def get_repo_mirror_from_apt(self):
+    def get_repo_mirror_from_apt(self) -> Any:
         """
         This tries to determine the apt mirror/archive to use (when processing repos) if the host machine is Debian or
         Ubuntu.
@@ -988,20 +934,21 @@ class _ImportSignatureManager(ManagerModule):
         :return: False if the try fails or otherwise the mirrors.
         """
         try:
-            sources = sourceslist.SourcesList()
-            release = debdistro.get_distro()
-            release.get_sources(sources)
-            mirrors = release.get_server_list()
-            for mirror in mirrors:
+            sources = sourceslist.SourcesList()  # type: ignore
+            release = debdistro.get_distro()  # type: ignore
+            release.get_sources(sources)  # type: ignore
+            mirrors = release.get_server_list()  # type: ignore
+            for mirror in mirrors:  # type: ignore
                 if mirror[2]:
-                    return mirror[1]
-        except:
+                    return mirror[1]  # type: ignore
+        except Exception:  # type: ignore
             return False
 
     # ==========================================================================
     # rhn-specific
 
-    def rhn_repo_adder(self, distribution: distro.Distro):
+    @staticmethod
+    def rhn_repo_adder(distribution: "Distro") -> None:
         """
         Not currently used.
 
@@ -1012,7 +959,8 @@ class _ImportSignatureManager(ManagerModule):
     # ==========================================================================
     # rsync-specific
 
-    def rsync_repo_adder(self, distribution: distro.Distro):
+    @staticmethod
+    def rsync_repo_adder(distribution: "Distro") -> None:
         """
         Not currently used.
 
@@ -1020,11 +968,205 @@ class _ImportSignatureManager(ManagerModule):
         """
         return
 
+    # ==========================================================================
+    # windows-specific
+
+    def import_winpe(self) -> None:
+        """
+        Preparing a Windows distro for network boot.
+        """
+        winpe_path = self.extract_winpe(self.path)
+
+        # For Windows, file paths are case-insensitive within a WinPE image, but for wimlib-utils
+        # they are not. And wimlib-utils does not provide options for case-insensitive search
+        # and extraction of files from this image other than setting the WIMLIB_IMAGEX_IGNORE_CASE
+        # environment variable.
+        wimdir_result = utils.subprocess_get(
+            ["/usr/bin/wimdir", winpe_path, "1"], shell=False
+        )
+        wim_file_list = wimdir_result.split("\n")
+        file_dict = {
+            "/windows/boot/pxe/pxeboot.n12": "",
+            "/windows/boot/pxe/bootmgr.exe": "",
+            "/windows/boot/efi/bootmgr.efi": "",
+            "/windows/system32/config/software": "",
+        }
+        for wim_file in wim_file_list:
+            if wim_file.lower() in file_dict:
+                file_dict[wim_file.lower()] = wim_file
+
+        file_list = [
+            file_dict["/windows/boot/efi/bootmgr.efi"],
+            file_dict["/windows/system32/config/software"],
+        ]
+        if "wimboot" not in self.signature["kernel_file"]:
+            file_list.extend(
+                [
+                    file_dict["/windows/boot/pxe/pxeboot.n12"],
+                    file_dict["/windows/boot/pxe/bootmgr.exe"],
+                ]
+            )
+
+        self.extract_files_from_wim(winpe_path, file_list)
+        self.update_winpe(winpe_path, file_dict["/windows/system32/config/software"])
+
+    def extract_winpe(self, distro_path: str) -> str:
+        """
+        Extracting winpe.wim from boot.win.
+
+        :param distro_path: The directory where the Windows distro is located.
+        :return: The path to the extracted WinPE image.
+        :raises CX
+        """
+        bootwim_path = os.path.join(distro_path, "sources", "boot.wim")
+        dest_path = os.path.join(distro_path, "boot")
+
+        if not os.path.exists(bootwim_path):
+            error_msg = f"{bootwim_path} not found!"
+            self.logger.error(error_msg)
+            raise CX(error_msg)
+
+        winpe_path = os.path.join(dest_path, "winpe.wim")
+        if not os.path.exists(dest_path):
+            filesystem_helpers.mkdir(dest_path)
+        if os.path.exists(winpe_path):
+            filesystem_helpers.rmfile(winpe_path)
+        if (
+            utils.subprocess_call(
+                ["/usr/bin/wimexport", bootwim_path, "1", winpe_path, "--boot"],
+                shell=False,
+            )
+            != 0
+        ):
+            error_msg = f"Cannot extract {winpe_path} from {bootwim_path}!"
+            self.logger.error(error_msg)
+            raise CX(error_msg)
+
+        return winpe_path
+
+    def update_winpe(self, winpe_path: str, win_registry: str) -> None:
+        """
+        Update WinPE image for network boot.
+
+        :param winpe_path: The path to WinPE image.
+        :param win_registry: The path to the Windows registry in the WinPE image.
+        :raises CX
+        """
+        if not HAS_HIVEX:
+            error_msg = (
+                "python3-hivex not found. If you need Automatic Windows "
+                "Installation support, please install."
+            )
+            self.logger.error(error_msg)
+            raise CX(error_msg)
+
+        software = os.path.join(
+            os.path.dirname(winpe_path), os.path.basename(win_registry).lower()
+        )
+        hivex_obj = hivex.Hivex(software, write=True)  # type: ignore
+        nodes: List[Any] = [hivex_obj.root()]  # type: ignore
+
+        while len(nodes) > 0:
+            node = nodes.pop()
+            nodes.extend(hivex_obj.node_children(node))  # type: ignore
+            self.reg_node_update(hivex_obj, node)
+
+        hivex_obj.commit(software)  # type: ignore
+
+        utils.subprocess_call(
+            [
+                "/usr/bin/wimupdate",
+                winpe_path,
+                f"--command=add {software} {win_registry}",
+            ],
+            shell=False,
+        )
+        os.remove(software)
+
+    def reg_node_update(self, hivex_obj: Any, node: Any) -> None:
+        """
+        Replacement of the substring X:\\$windows.~bt with X: in the Windows registry node.
+
+        :param hivex_obj: Hivex object.
+        :param node: The registry node.
+        """
+        new_values: List[Optional[Dict[str, Any]]] = []
+        update_flag = False
+        key_vals: List[Any] = hivex_obj.node_values(node)  # type: ignore
+        pat = "X:\\$windows.~bt"
+
+        for key_val in key_vals:
+            key: str = hivex_obj.value_key(key_val)  # type: ignore
+            val = hivex_obj.node_get_value(node, key)  # type: ignore
+            val_type: int
+            val_value: bytes
+            val_type, val_value = hivex_obj.value_value(val)  # type: ignore
+            if pat in key:
+                key = key.replace(pat, "X:")
+                update_flag = True
+            if val_type in (REG_SZ, REG_EXPAND_SZ):
+                val_string: str = hivex_obj.value_string(val)  # type: ignore
+                if pat in val_string:
+                    val_string = val_string.replace(pat, "X:")
+                    val_value = (val_string + "\0").encode(encoding="utf-16le")
+                    update_flag = True
+            new_values.append(
+                {
+                    "key": key,
+                    "t": val_type,
+                    "value": val_value,
+                }
+            )
+
+        if update_flag:
+            hivex_obj.node_set_values(node, new_values)  # type: ignore
+
+    def extract_files_from_wim(self, winpe_path: str, wim_files: List[str]) -> None:
+        """
+        Extracting files from winpe.win.
+
+        :param winpe_path: The path to the WinPE image.
+        :param wim_files: The list of files to extract.
+        :raises CX
+        """
+        dest_path = os.path.dirname(winpe_path)
+        cmd_args = [
+            "/usr/bin/wimextract",
+            winpe_path,
+            "1",
+        ]
+        cmd_args.extend(wim_files)
+        cmd_args.extend(
+            [
+                f"--dest-dir={dest_path}",
+                "--no-acls",
+                "--no-attributes",
+            ]
+        )
+        if (
+            utils.subprocess_call(
+                cmd_args,
+                shell=False,
+            )
+            != 0
+        ):
+            error_msg = f'Cannot extract "{wim_files}" files from {winpe_path}!'
+            self.logger.error(error_msg)
+            raise CX(error_msg)
+
+        for wim_file_path in wim_files:
+            wim_file = os.path.basename(wim_file_path)
+            if wim_file != wim_file.lower():
+                os.rename(
+                    os.path.join(dest_path, wim_file),
+                    os.path.join(dest_path, wim_file.lower()),
+                )
+
 
 # ==========================================================================
 
 
-def get_import_manager(api):
+def get_import_manager(api: "CobblerAPI") -> _ImportSignatureManager:
     """
     Get an instance of the import manager which enables you to import various things.
 
@@ -1035,5 +1177,5 @@ def get_import_manager(api):
     global MANAGER  # pylint: disable=global-statement
 
     if not MANAGER:
-        MANAGER = _ImportSignatureManager(api)
+        MANAGER = _ImportSignatureManager(api)  # type: ignore
     return MANAGER

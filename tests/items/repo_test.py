@@ -1,11 +1,32 @@
-from cobbler import enums
-from cobbler.items.repo import Repo
+"""
+Tests that validate the functionality of the module that is responsible for providing repository related functionality.
+"""
+
+from typing import TYPE_CHECKING, Any
+
 import pytest
+
+from cobbler import enums
+from cobbler.api import CobblerAPI
+from cobbler.items.repo import Repo
+from cobbler.settings import Settings
 
 from tests.conftest import does_not_raise
 
+if TYPE_CHECKING:
+    from pytest_mock import MockerFixture
 
-def test_object_creation(cobbler_api):
+
+@pytest.fixture(name="test_settings")
+def fixture_test_settings(mocker: "MockerFixture", cobbler_api: CobblerAPI) -> Settings:
+    settings = mocker.MagicMock(name="repo_setting_mock", spec=cobbler_api.settings())
+    orig = cobbler_api.settings()
+    for key in orig.to_dict():
+        setattr(settings, key, getattr(orig, key))
+    return settings
+
+
+def test_object_creation(cobbler_api: CobblerAPI):
     # Arrange
 
     # Act
@@ -15,7 +36,7 @@ def test_object_creation(cobbler_api):
     assert isinstance(repo, Repo)
 
 
-def test_make_clone(cobbler_api):
+def test_make_clone(cobbler_api: CobblerAPI):
     # Arrange
     repo = Repo(cobbler_api)
 
@@ -26,10 +47,35 @@ def test_make_clone(cobbler_api):
     assert result != repo
 
 
+def test_to_dict(cobbler_api: CobblerAPI):
+    # Arrange
+    titem = Repo(cobbler_api)
+
+    # Act
+    result = titem.to_dict()
+
+    # Assert
+    assert isinstance(result, dict)
+    assert result.get("proxy") == enums.VALUE_INHERITED
+
+
+def test_to_dict_resolved(cobbler_api: CobblerAPI):
+    # Arrange
+    titem = Repo(cobbler_api)
+
+    # Act
+    result = titem.to_dict(resolved=True)
+
+    # Assert
+    assert isinstance(result, dict)
+    assert result.get("proxy") == ""
+    assert enums.VALUE_INHERITED not in str(result)
+
+
 # Properties Tests
 
 
-def test_mirror(cobbler_api):
+def test_mirror(cobbler_api: CobblerAPI):
     # Arrange
     repo = Repo(cobbler_api)
 
@@ -40,7 +86,7 @@ def test_mirror(cobbler_api):
     assert repo.mirror == "https://mymirror.com"
 
 
-def test_mirror_type(cobbler_api):
+def test_mirror_type(cobbler_api: CobblerAPI):
     # Arrange
     repo = Repo(cobbler_api)
 
@@ -51,7 +97,7 @@ def test_mirror_type(cobbler_api):
     assert repo.mirror_type == enums.MirrorType.BASEURL
 
 
-def test_keep_updated(cobbler_api):
+def test_keep_updated(cobbler_api: CobblerAPI):
     # Arrange
     repo = Repo(cobbler_api)
 
@@ -62,7 +108,7 @@ def test_keep_updated(cobbler_api):
     assert not repo.keep_updated
 
 
-def test_yumopts(cobbler_api):
+def test_yumopts(cobbler_api: CobblerAPI):
     # Arrange
     testrepo = Repo(cobbler_api)
 
@@ -73,7 +119,7 @@ def test_yumopts(cobbler_api):
     assert testrepo.yumopts == {}
 
 
-def test_rsyncopts(cobbler_api):
+def test_rsyncopts(cobbler_api: CobblerAPI):
     # Arrange
     testrepo = Repo(cobbler_api)
 
@@ -84,7 +130,7 @@ def test_rsyncopts(cobbler_api):
     assert testrepo.rsyncopts == {}
 
 
-def test_environment(cobbler_api):
+def test_environment(cobbler_api: CobblerAPI):
     # Arrange
     testrepo = Repo(cobbler_api)
 
@@ -95,7 +141,7 @@ def test_environment(cobbler_api):
     assert testrepo.environment == {}
 
 
-def test_priority(cobbler_api):
+def test_priority(cobbler_api: CobblerAPI):
     # Arrange
     testrepo = Repo(cobbler_api)
 
@@ -106,7 +152,7 @@ def test_priority(cobbler_api):
     assert testrepo.priority == 5
 
 
-def test_rpm_list(cobbler_api):
+def test_rpm_list(cobbler_api: CobblerAPI):
     # Arrange
     testrepo = Repo(cobbler_api)
 
@@ -130,7 +176,10 @@ def test_rpm_list(cobbler_api):
     ],
 )
 def test_createrepo_flags(
-    cobbler_api, input_flags, expected_exception, expected_result
+    cobbler_api: CobblerAPI,
+    input_flags: Any,
+    expected_exception: Any,
+    expected_result: str,
 ):
     # Arrange
     testrepo = Repo(cobbler_api)
@@ -143,7 +192,7 @@ def test_createrepo_flags(
         assert testrepo.createrepo_flags == expected_result
 
 
-def test_breed(cobbler_api):
+def test_breed(cobbler_api: CobblerAPI):
     # Arrange
     repo = Repo(cobbler_api)
 
@@ -154,7 +203,7 @@ def test_breed(cobbler_api):
     assert repo.breed == enums.RepoBreeds.YUM
 
 
-def test_os_version(cobbler_api):
+def test_os_version(cobbler_api: CobblerAPI):
     # Arrange
     testrepo = Repo(cobbler_api)
     testrepo.breed = "yum"
@@ -177,7 +226,7 @@ def test_os_version(cobbler_api):
         ("", pytest.raises(ValueError)),
     ],
 )
-def test_arch(cobbler_api, value, expected_exception):
+def test_arch(cobbler_api: CobblerAPI, value: Any, expected_exception: Any):
     # Arrange
     testrepo = Repo(cobbler_api)
 
@@ -192,7 +241,7 @@ def test_arch(cobbler_api, value, expected_exception):
             assert testrepo.arch == value
 
 
-def test_mirror_locally(cobbler_api):
+def test_mirror_locally(cobbler_api: CobblerAPI):
     # Arrange
     testrepo = Repo(cobbler_api)
 
@@ -203,7 +252,7 @@ def test_mirror_locally(cobbler_api):
     assert not testrepo.mirror_locally
 
 
-def test_apt_components(cobbler_api):
+def test_apt_components(cobbler_api: CobblerAPI):
     # Arrange
     testrepo = Repo(cobbler_api)
 
@@ -214,7 +263,7 @@ def test_apt_components(cobbler_api):
     assert testrepo.apt_components == []
 
 
-def test_apt_dists(cobbler_api):
+def test_apt_dists(cobbler_api: CobblerAPI):
     # Arrange
     testrepo = Repo(cobbler_api)
 
@@ -233,7 +282,12 @@ def test_apt_dists(cobbler_api):
         (0, pytest.raises(TypeError), ""),
     ],
 )
-def test_proxy(cobbler_api, input_proxy, expected_exception, expected_result):
+def test_proxy(
+    cobbler_api: CobblerAPI,
+    input_proxy: Any,
+    expected_exception: Any,
+    expected_result: str,
+):
     # Arrange
     testrepo = Repo(cobbler_api)
 
@@ -243,3 +297,50 @@ def test_proxy(cobbler_api, input_proxy, expected_exception, expected_result):
 
         # Assert
         assert testrepo.proxy == expected_result
+
+
+def test_inheritance(
+    mocker: "MockerFixture", cobbler_api: CobblerAPI, test_settings: Settings
+):
+    """
+    Checking that inherited properties are correctly inherited from settings and
+    that the <<inherit>> value can be set for them.
+    """
+    # Arrange
+    mocker.patch.object(cobbler_api, "settings", return_value=test_settings)
+    testrepo = Repo(cobbler_api)
+
+    # Act
+    for key, key_value in testrepo.__dict__.items():
+        if key_value == enums.VALUE_INHERITED:
+            new_key = key[1:].lower()
+            new_value = getattr(testrepo, new_key)
+            settings_name = new_key
+            if new_key == "owners":
+                settings_name = "default_ownership"
+            elif new_key == "proxy":
+                settings_name = "proxy_url_ext"
+            if hasattr(test_settings, f"default_{settings_name}"):
+                settings_name = f"default_{settings_name}"
+            if hasattr(test_settings, settings_name):
+                setting = getattr(test_settings, settings_name)
+                if isinstance(setting, str):
+                    new_value = "test_inheritance"
+                elif isinstance(setting, bool):
+                    new_value = True
+                elif isinstance(setting, int):
+                    new_value = 1
+                elif isinstance(setting, float):
+                    new_value = 1.0
+                elif isinstance(setting, dict):
+                    new_value = {"test_inheritance": "test_inheritance"}
+                elif isinstance(setting, list):
+                    new_value = ["test_inheritance"]
+                setattr(test_settings, settings_name, new_value)
+
+            prev_value = getattr(testrepo, new_key)
+            setattr(testrepo, new_key, enums.VALUE_INHERITED)
+
+            # Assert
+            assert prev_value == new_value
+            assert prev_value == getattr(testrepo, new_key)

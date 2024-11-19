@@ -1,773 +1,247 @@
 """
-All code belonging to Cobbler systems. This includes network interfaces.
+All code belonging to Cobbler systems.
+
+Changelog (System):
+
+V3.4.0 (unreleased):
+    * Added:
+        * ``display_name``: str
+    * Changes:
+        * Constructor: ``kwargs`` can now be used to seed the item during creation.
+        * ``from_dict()``: The method was moved to the base class.
+        * ``parent``: The property was moved to the base class.
+V3.3.4 (unreleased):
+    * Changed:
+        * The network interface ``default`` is not created on object creation.
+V3.3.3:
+    * Changed:
+        * ``boot_loaders``: Can now be set to ``<<inherit>>``
+        * ``next_server_v4``: Can now be set to ``<<inhertit>>``
+        * ``next_server_v6``: Can now be set to ``<<inhertit>>``
+        * ``virt_cpus``: Can now be set to ``<<inhertit>>``
+        * ``virt_file_size``: Can now be set to ``<<inhertit>>``
+        * ``virt_disk_driver``: Can now be set to ``<<inhertit>>``
+        * ``virt_auto_boot``: Can now be set to ``<<inhertit>>``
+        * ``virt_ram``: Can now be set to ``<<inhertit>>``
+        * ``virt_type``: Can now be set to ``<<inhertit>>``
+        * ``virt_path``: Can now be set to ``<<inhertit>>``
+V3.3.2:
+    * No changes
+V3.3.1:
+    * Changed:
+        * ``serial_device``: Default value is now ``-1``
+V3.3.0:
+    * This release switched from pure attributes to properties (getters/setters).
+    * Added:
+        * ``next_server_v4``
+        * ``next_server_v6``
+    * Changed:
+        * ``virt_*``: Cannot be set to inherit anymore
+        * ``enable_gpxe``: Renamed to ``enable_ipxe``
+    * Removed:
+        * ``get_fields()``
+        * ``next_server`` - Please use one of ``next_server_v4`` or ``next_server_v6``
+        * ``set_boot_loader()`` - Moved to ``boot_loader`` property
+        * ``set_server()`` - Moved to ``server`` property
+        * ``set_next_server()`` - Moved to ``next_server`` property
+        * ``set_filename()`` - Moved to ``filename`` property
+        * ``set_proxy()`` - Moved to ``proxy`` property
+        * ``set_redhat_management_key()`` - Moved to ``redhat_management_key`` property
+        * ``get_redhat_management_key()`` - Moved to ``redhat_management_key`` property
+        * ``set_dhcp_tag()`` - Moved to ``NetworkInterface`` class property ``dhcp_tag``
+        * ``set_cnames()`` - Moved to ``NetworkInterface`` class property ``cnames``
+        * ``set_status()`` - Moved to ``status`` property
+        * ``set_static()`` - Moved to ``NetworkInterface`` class property ``static``
+        * ``set_management()`` - Moved to ``NetworkInterface`` class property ``management``
+        * ``set_dns_name()`` - Moved to ``NetworkInterface`` class property ``dns_name``
+        * ``set_hostname()`` - Moved to ``hostname`` property
+        * ``set_ip_address()`` - Moved to ``NetworkInterface`` class property ``ip_address``
+        * ``set_mac_address()`` - Moved to ``NetworkInterface`` class property ``mac_address``
+        * ``set_gateway()`` - Moved to ``gateway`` property
+        * ``set_name_servers()`` - Moved to ``name_servers`` property
+        * ``set_name_servers_search()`` - Moved to ``name_servers_search`` property
+        * ``set_netmask()`` - Moved to ``NetworkInterface`` class property ``netmask``
+        * ``set_if_gateway()`` - Moved to ``NetworkInterface`` class property ``if_gateway``
+        * ``set_virt_bridge()`` - Moved to ``NetworkInterface`` class property ``virt_bridge``
+        * ``set_interface_type()`` - Moved to ``NetworkInterface`` class property ``interface_type``
+        * ``set_interface_master()`` - Moved to ``NetworkInterface`` class property ``interface_master``
+        * ``set_bonding_opts()`` - Moved to ``NetworkInterface`` class property ``bonding_opts``
+        * ``set_bridge_opts()`` - Moved to ``NetworkInterface`` class property ``bridge_opts``
+        * ``set_ipv6_autoconfiguration()`` - Moved to ``ipv6_autoconfiguration`` property
+        * ``set_ipv6_default_device()`` - Moved to ``ipv6_default_device`` property
+        * ``set_ipv6_address()`` - Moved to ``NetworkInterface`` class property ``ipv6_address``
+        * ``set_ipv6_prefix()`` - Moved to ``NetworkInterface`` class property ``ipv6_prefix``
+        * ``set_ipv6_secondaries()`` - Moved to ``NetworkInterface`` class property ``ipv6_secondaries``
+        * ``set_ipv6_default_gateway()`` - Moved to ``NetworkInterface`` class property ``ipv6_default_gateway``
+        * ``set_ipv6_static_routes()`` - Moved to ``NetworkInterface`` class property ``ipv6_static_routes``
+        * ``set_ipv6_mtu()`` - Moved to ``NetworkInterface`` class property ``ipv6_mtu``
+        * ``set_mtu()`` - Moved to ``NetworkInterface`` class property ``mtu``
+        * ``set_connected_mode()`` - Moved to ``NetworkInterface`` class property ``connected_mode``
+        * ``set_enable_gpxe()`` - Moved to ``enable_gpxe`` property
+        * ``set_profile()`` - Moved to ``profile`` property
+        * ``set_image()`` - Moved to ``image`` property
+        * ``set_virt_cpus()`` - Moved to ``virt_cpus`` property
+        * ``set_virt_file_size()`` - Moved to ``virt_file_size`` property
+        * ``set_virt_disk_driver()`` - Moved to ``virt_disk_driver`` property
+        * ``set_virt_auto_boot()`` - Moved to ``virt_auto_boot`` property
+        * ``set_virt_pxe_boot()`` - Moved to ``virt_pxe_boot`` property
+        * ``set_virt_ram()`` - Moved to ``virt_ram`` property
+        * ``set_virt_type()`` - Moved to ``virt_type`` property
+        * ``set_virt_path()`` - Moved to ``virt_path`` property
+        * ``set_netboot_enabled()`` - Moved to ``netboot_enabled`` property
+        * ``set_autoinstall()`` - Moved to ``autoinstall`` property
+        * ``set_power_type()`` - Moved to ``power_type`` property
+        * ``set_power_identity_file()`` - Moved to ``power_identity_file`` property
+        * ``set_power_options()`` - Moved to ``power_options`` property
+        * ``set_power_user()`` - Moved to ``power_user`` property
+        * ``set_power_pass()`` - Moved to ``power_pass`` property
+        * ``set_power_address()`` - Moved to ``power_address`` property
+        * ``set_power_id()`` - Moved to ``power_id`` property
+        * ``set_repos_enabled()`` - Moved to ``repos_enabled`` property
+        * ``set_serial_device()`` - Moved to ``serial_device`` property
+        * ``set_serial_baud_rate()`` - Moved to ``serial_baud_rate`` property
+V3.2.2:
+    * No changes
+V3.2.1:
+    * Added:
+        * ``kickstart``: Resolves as a proxy to ``autoinstall``
+V3.2.0:
+    * No changes
+V3.1.2:
+    * Added:
+        * ``filename``: str - Inheritable
+        * ``set_filename()``
+V3.1.1:
+    * No changes
+V3.1.0:
+    * No changes
+V3.0.1:
+    * File was moved from ``cobbler/item_system.py`` to ``cobbler/items/system.py``.
+V3.0.0:
+    * Field definitions for network interfaces moved to own ``FIELDS`` array
+    * Added:
+        * ``boot_loader``: str - Inheritable
+        * ``next_server``: str - Inheritable
+        * ``power_options``: str
+        * ``power_identity_file``: str
+        * ``serial_device``: int
+        * ``serial_baud_rate``: int - One of "", "2400", "4800", "9600", "19200", "38400", "57600", "115200"
+        * ``set_next_server()``
+        * ``set_serial_device()``
+        * ``set_serial_baud_rate()``
+        * ``get_config_filename()``
+        * ``set_power_identity_file()``
+        * ``set_power_options()``
+    * Changed:
+        * ``kickstart``: Renamed to ``autoinstall``
+        * ``ks_meta``: Renamed to ``autoinstall_meta``
+        * ``from_datastruct``: Renamed to ``from_dict()``
+        * ``set_kickstart()``: Renamed to ``set_autoinstall()``
+    * Removed:
+        * ``redhat_management_server``
+        * ``set_ldap_enabled()``
+        * ``set_monit_enabled()``
+        * ``set_template_remote_kickstarts()``
+        * ``set_redhat_management_server()``
+        * ``set_name()``
+V2.8.5:
+    * Inital tracking of changes for the changelog.
+    * Network interface defintions part of this class
+    * Added:
+        * ``name``: str
+        * ``uid``: str
+        * ``owners``: List[str] - Inheritable
+        * ``profile``: str - Name of the profile
+        * ``image``: str - Name of the image
+        * ``status``: str - One of "", "development", "testing", "acceptance", "production"
+        * ``kernel_options``: Dict[str, Any]
+        * ``kernel_options_post``: Dict[str, Any]
+        * ``ks_meta``: Dict[str, Any]
+        * ``enable_gpxe``: bool - Inheritable
+        * ``proxy``: str - Inheritable
+        * ``netboot_enabled``: bool
+        * ``kickstart``: str - Inheritable
+        * ``comment``: str
+        * ``depth``: int
+        * ``server``: str - Inheritable
+        * ``virt_path``: str - Inheritable
+        * ``virt_type``: str - Inheritable; One of "xenpv", "xenfv", "qemu", "kvm", "vmware", "openvz"
+        * ``virt_cpus``: int - Inheritable
+        * ``virt_file_size``: float - Inheritable
+        * ``virt_disk_driver``: str - Inheritable; One of "<<inherit>>", "raw", "qcow", "qcow2", "aio", "vmdk", "qed"
+        * ``virt_ram``: int - Inheritable
+        * ``virt_auto_boot``: bool - Inheritable
+        * ``virt_pxe_boot``: bool
+        * ``ctime``: float
+        * ``mtime``: float
+        * ``power_type``: str - Default loaded from settings key ``power_management_default_type``
+        * ``power_address``: str
+        * ``power_user``: str
+        * ``power_pass``: str
+        * ``power_id``: str
+        * ``hostname``: str
+        * ``gateway``: str
+        * ``name_servers``: List[str]
+        * ``name_servers_search``: List[str]
+        * ``ipv6_default_device``: str
+        * ``ipv6_autoconfiguration``: bool
+        * ``mgmt_classes``: List[Any] - Inheritable
+        * ``mgmt_parameters``: str - Inheritable
+        * ``boot_files``: Dict[str, Any]/List (Not reverse engineeriable) - Inheritable
+        * ``fetchable_files``: Dict[str, Any] - Inheritable
+        * ``template_files``: Dict[str, Any] - Inheritable
+        * ``redhat_management_key``: str - Inheritable
+        * ``redhat_management_server``: str - Inheritable
+        * ``template_remote_kickstarts``: bool - Default loaded from settings key ``template_remote_kickstarts``
+        * ``repos_enabled``: bool
+        * ``ldap_enabled``: - bool
+        * ``ldap_type``: str - Default loaded from settings key ``ldap_management_default_type``
+        * ``monit_enabled``: bool
+
 """
+
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: Copyright 2006-2008, Red Hat, Inc and Others
 # SPDX-FileCopyrightText: Michael DeHaan <michael.dehaan AT gmail>
 
-import enum
-import logging
-import uuid
-from typing import Any, Dict, List, Optional, Union
-
-from ipaddress import AddressValueError
+import copy
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Union
 
 from cobbler import autoinstall_manager, enums, power_manager, utils, validate
 from cobbler.cexceptions import CX
-from cobbler.items.item import Item
+from cobbler.decorator import InheritableProperty, LazyProperty
+from cobbler.items.abstract.bootable_item import BootableItem
+from cobbler.items.network_interface import NetworkInterface
+from cobbler.utils import filesystem_helpers, input_converters
 
+if TYPE_CHECKING:
+    from cobbler.api import CobblerAPI
 
-class NetworkInterface:
-    """
-    A subobject of a Cobbler System which represents the network interfaces
-    """
 
-    def __init__(self, api):
-        """
-        Constructor.
-
-        :param api: The Cobbler API object which is used for resolving information.
-        """
-        self.__logger = logging.getLogger()
-        self.__api = api
-        self._bonding_opts = ""
-        self._bridge_opts = ""
-        self._cnames = []
-        self._connected_mode = False
-        self._dhcp_tag = ""
-        self._dns_name = ""
-        self._if_gateway = ""
-        self._interface_master = ""
-        self._interface_type = enums.NetworkInterfaceType.NA
-        self._ip_address = ""
-        self._ipv6_address = ""
-        self._ipv6_default_gateway = ""
-        self._ipv6_mtu = ""
-        self._ipv6_prefix = ""
-        self._ipv6_secondaries = []
-        self._ipv6_static_routes = []
-        self._mac_address = ""
-        self._management = False
-        self._mtu = ""
-        self._netmask = ""
-        self._static = False
-        self._static_routes = []
-        self._virt_bridge = ""
-
-    def from_dict(self, dictionary: dict):
-        """
-        Initializes the object with attributes from the dictionary.
-
-        :param dictionary: The dictionary with values.
-        """
-        dictionary_keys = list(dictionary.keys())
-        for key in dictionary:
-            if hasattr(self, key):
-                setattr(self, key, dictionary[key])
-                dictionary_keys.remove(key)
-        if len(dictionary_keys) > 0:
-            self.__logger.info(
-                "The following keys were ignored and could not be set for the NetworkInterface object: "
-                "%s",
-                str(dictionary_keys),
-            )
-
-    def to_dict(self) -> dict:
-        """
-        This converts everything in this object to a dictionary.
-
-        :return: A dictionary with all values present in this object.
-        """
-        result = {}
-        for key in self.__dict__:
-            if "__" in key:
-                continue
-            if key.startswith("_"):
-                if isinstance(self.__dict__[key], enum.Enum):
-                    result[key[1:]] = self.__dict__[key].name
-                else:
-                    result[key[1:]] = self.__dict__[key]
-        return result
-
-    # These two methods are currently not used but we do want to use them in the future, so let's define them.
-    def serialize(self):
-        """
-        This method is a proxy for :meth:`~cobbler.items.item.Item.to_dict` and contains additional logic for
-        serialization to a persistent location.
-
-        :return: The dictionary with the information for serialization.
-        """
-        self.to_dict()
-
-    def deserialize(self, interface_dict: dict):
-        """
-        This is currently a proxy for :py:meth:`~cobbler.items.item.Item.from_dict` .
-
-        :param interface_dict: The dictionary with the data to deserialize.
-        """
-        self.from_dict(interface_dict)
-
-    @property
-    def dhcp_tag(self) -> str:
-        """
-        dhcp_tag property.
-
-        :getter: Returns the value for ``dhcp_tag``.
-        :setter: Sets the value for the property ``dhcp_tag``.
-        """
-        return self._dhcp_tag
-
-    @dhcp_tag.setter
-    def dhcp_tag(self, dhcp_tag: str):
-        """
-        Setter for the dhcp_tag of the NetworkInterface class.
-
-        :param dhcp_tag: The new dhcp tag.
-        """
-        if not isinstance(dhcp_tag, str):
-            raise TypeError(
-                "Field dhcp_tag of object NetworkInterface needs to be of type str!"
-            )
-        self._dhcp_tag = dhcp_tag
-
-    @property
-    def cnames(self) -> list:
-        """
-        cnames property.
-
-        :getter: Returns the value for ``cnames``.
-        :setter: Sets the value for the property ``cnames``.
-        """
-        return self._cnames
-
-    @cnames.setter
-    def cnames(self, cnames: list):
-        """
-        Setter for the cnames of the NetworkInterface class.
-
-        :param cnames: The new cnames.
-        """
-        self._cnames = utils.input_string_or_list_no_inherit(cnames)
-
-    @property
-    def static_routes(self) -> list:
-        """
-        static_routes property.
-
-        :getter: Returns the value for ``static_routes``.
-        :setter: Sets the value for the property ``static_routes``.
-        """
-        return self._static_routes
-
-    @static_routes.setter
-    def static_routes(self, routes: list):
-        """
-        Setter for the static_routes of the NetworkInterface class.
-
-        :param routes: The new routes.
-        """
-        self._static_routes = utils.input_string_or_list_no_inherit(routes)
-
-    @property
-    def static(self) -> bool:
-        """
-        static property.
-
-        :getter: Returns the value for ``static``.
-        :setter: Sets the value for the property ``static``.
-        """
-        return self._static
-
-    @static.setter
-    def static(self, truthiness: bool):
-        """
-        Setter for the static of the NetworkInterface class.
-
-        :param truthiness: The new value if the interface is static or not.
-        """
-        try:
-            truthiness = utils.input_boolean(truthiness)
-        except TypeError as e:
-            raise TypeError(
-                "Field static of NetworkInterface needs to be of Type bool!"
-            ) from e
-        self._static = truthiness
-
-    @property
-    def management(self) -> bool:
-        """
-        management property.
-
-        :getter: Returns the value for ``management``.
-        :setter: Sets the value for the property ``management``.
-        """
-        return self._management
-
-    @management.setter
-    def management(self, truthiness: bool):
-        """
-        Setter for the management of the NetworkInterface class.
-
-        :param truthiness: The new value for management.
-        """
-        try:
-            truthiness = utils.input_boolean(truthiness)
-        except TypeError as e:
-            raise TypeError(
-                "Field management of object NetworkInterface needs to be of type bool!"
-            ) from e
-        self._management = truthiness
-
-    @property
-    def dns_name(self) -> str:
-        """
-        dns_name property.
-
-        :getter: Returns the value for ``dns_name`.
-        :setter: Sets the value for the property ``dns_name``.
-        """
-        return self._dns_name
-
-    @dns_name.setter
-    def dns_name(self, dns_name: str):
-        """
-        Set DNS name for interface.
-
-        :param dns_name: DNS Name of the system
-        :raises ValueError: In case the DNS name is already existing inside Cobbler
-        """
-        dns_name = validate.hostname(dns_name)
-        if dns_name != "" and not self.__api.settings().allow_duplicate_hostnames:
-            matched = self.__api.find_items("system", {"dns_name": dns_name})
-            for match in matched:
-                if self in match.interfaces.values():
-                    continue
-                raise ValueError(
-                    f'DNS name duplicate found "{dns_name}". Object with the conflict has the name "{match.name}"'
-                )
-        self._dns_name = dns_name
-
-    @property
-    def ip_address(self) -> str:
-        """
-        ip_address property.
-
-        :getter: Returns the value for ``ip_address``.
-        :setter: Sets the value for the property ``ip_address``.
-        """
-        return self._ip_address
-
-    @ip_address.setter
-    def ip_address(self, address: str):
-        """
-        Set IPv4 address on interface.
-
-        :param address: IP address
-        :raises ValueError: In case the IP address is already existing inside Cobbler.
-        """
-        address = validate.ipv4_address(address)
-        if address != "" and not self.__api.settings().allow_duplicate_ips:
-            matched = self.__api.find_items("system", {"ip_address": address})
-            for match in matched:
-                if self in match.interfaces.values():
-                    continue
-                else:
-                    raise ValueError(
-                        f'IP address duplicate found "{address}". Object with the conflict has the name "{match.name}"'
-                    )
-        self._ip_address = address
-
-    @property
-    def mac_address(self) -> str:
-        """
-        mac_address property.
-
-        :getter: Returns the value for ``mac_address``.
-        :setter: Sets the value for the property ``mac_address``.
-        """
-        return self._mac_address
-
-    @mac_address.setter
-    def mac_address(self, address: str):
-        """
-        Set MAC address on interface.
-
-        :param address: MAC address
-        :raises CX: In case there a random mac can't be computed
-        """
-        address = validate.mac_address(address)
-        if address == "random":
-            # FIXME: Pass virt_type of system
-            address = utils.get_random_mac(self.__api)
-        if address != "" and not self.__api.settings().allow_duplicate_macs:
-            matched = self.__api.find_items("system", {"mac_address": address})
-            for match in matched:
-                if self in match.interfaces.values():
-                    continue
-                else:
-                    raise ValueError(
-                        f'MAC address duplicate found "{address}". Object with the conflict has the name "{match.name}"'
-                    )
-        self._mac_address = address
-
-    @property
-    def netmask(self) -> str:
-        """
-        netmask property.
-
-        :getter: Returns the value for ``netmask``.
-        :setter: Sets the value for the property ``netmask``.
-        """
-        return self._netmask
-
-    @netmask.setter
-    def netmask(self, netmask: str):
-        """
-        Set the netmask for given interface.
-
-        :param netmask: netmask
-        """
-        self._netmask = validate.ipv4_netmask(netmask)
-
-    @property
-    def if_gateway(self) -> str:
-        """
-        if_gateway property.
-
-        :getter: Returns the value for ``if_gateway``.
-        :setter: Sets the value for the property ``if_gateway``.
-        """
-        return self._if_gateway
-
-    @if_gateway.setter
-    def if_gateway(self, gateway: str):
-        """
-        Set the per-interface gateway. Exceptions are raised if the value is invalid. For details see
-        :meth:`~cobbler.validate.ipv4_address`.
-
-        :param gateway: IPv4 address for the gateway
-        """
-        self._if_gateway = validate.ipv4_address(gateway)
-
-    @property
-    def virt_bridge(self) -> str:
-        """
-        virt_bridge property. If set to ``<<inherit>>`` this will read the value from the setting "default_virt_bridge".
-
-        :getter: Returns the value for ``virt_bridge``.
-        :setter: Sets the value for the property ``virt_bridge``.
-        """
-        if self._virt_bridge == enums.VALUE_INHERITED:
-            return self.__api.settings().default_virt_bridge
-        return self._virt_bridge
-
-    @virt_bridge.setter
-    def virt_bridge(self, bridge: str):
-        """
-        Setter for the virt_bridge of the NetworkInterface class.
-
-        :param bridge: The new value for "virt_bridge".
-        """
-        if not isinstance(bridge, str):
-            raise TypeError(
-                "Field virt_bridge of object NetworkInterface should be of type str!"
-            )
-        if bridge == "":
-            self._virt_bridge = enums.VALUE_INHERITED
-            return
-        self._virt_bridge = bridge
-
-    @property
-    def interface_type(self) -> enums.NetworkInterfaceType:
-        """
-        interface_type property.
-
-        :getter: Returns the value for ``interface_type``.
-        :setter: Sets the value for the property ``interface_type``.
-        """
-        return self._interface_type
-
-    @interface_type.setter
-    def interface_type(self, intf_type: Union[enums.NetworkInterfaceType, int, str]):
-        """
-        Setter for the interface_type of the NetworkInterface class.
-
-        :param intf_type: The interface type to be set. Will be autoconverted to the enum type if possible.
-        """
-        if not isinstance(intf_type, (enums.NetworkInterfaceType, int, str)):
-            raise TypeError(
-                "interface intf_type type must be of int, str or enums.NetworkInterfaceType"
-            )
-        if isinstance(intf_type, int):
-            try:
-                intf_type = enums.NetworkInterfaceType(intf_type)
-            except ValueError as value_error:
-                raise ValueError(
-                    'intf_type with number "%s" was not a valid interface type!'
-                    % intf_type
-                ) from value_error
-        elif isinstance(intf_type, str):
-            try:
-                intf_type = enums.NetworkInterfaceType[intf_type.upper()]
-            except KeyError as key_error:
-                raise ValueError(
-                    "intf_type choices include: %s"
-                    % list(map(str, enums.NetworkInterfaceType))
-                ) from key_error
-        # Now it must be of the enum type
-        if intf_type not in enums.NetworkInterfaceType:
-            raise ValueError(
-                "interface intf_type value must be one of: %s or blank"
-                % ",".join(list(map(str, enums.NetworkInterfaceType)))
-            )
-        self._interface_type = intf_type
-
-    @property
-    def interface_master(self) -> str:
-        """
-        interface_master property.
-
-        :getter: Returns the value for ``interface_master``.
-        :setter: Sets the value for the property ``interface_master``.
-        """
-        return self._interface_master
-
-    @interface_master.setter
-    def interface_master(self, interface_master: str):
-        """
-        Setter for the interface_master of the NetworkInterface class.
-
-        :param interface_master: The new interface master.
-        """
-        if not isinstance(interface_master, str):
-            raise TypeError(
-                "Field interface_master of object NetworkInterface needs to be of type str!"
-            )
-        self._interface_master = interface_master
-
-    @property
-    def bonding_opts(self) -> str:
-        """
-        bonding_opts property.
-
-        :getter: Returns the value for ``bonding_opts``.
-        :setter: Sets the value for the property ``bonding_opts``.
-        """
-        return self._bonding_opts
-
-    @bonding_opts.setter
-    def bonding_opts(self, bonding_opts: str):
-        """
-        Setter for the bonding_opts of the NetworkInterface class.
-
-        :param bonding_opts: The new bonding options for the interface.
-        """
-        if not isinstance(bonding_opts, str):
-            raise TypeError(
-                "Field bonding_opts of object NetworkInterface needs to be of type str!"
-            )
-        self._bonding_opts = bonding_opts
-
-    @property
-    def bridge_opts(self) -> str:
-        """
-        bridge_opts property.
-
-        :getter: Returns the value for ``bridge_opts``.
-        :setter: Sets the value for the property ``bridge_opts``.
-        """
-        return self._bridge_opts
-
-    @bridge_opts.setter
-    def bridge_opts(self, bridge_opts: str):
-        """
-        Setter for the bridge_opts of the NetworkInterface class.
-
-        :param bridge_opts: The new bridge options to set for the interface.
-        """
-        if not isinstance(bridge_opts, str):
-            raise TypeError(
-                "Field bridge_opts of object NetworkInterface needs to be of type str!"
-            )
-        self._bridge_opts = bridge_opts
-
-    @property
-    def ipv6_address(self) -> str:
-        """
-        ipv6_address property.
-
-        :getter: Returns the value for ``ipv6_address``.
-        :setter: Sets the value for the property ``ipv6_address``.
-        """
-        return self._ipv6_address
-
-    @ipv6_address.setter
-    def ipv6_address(self, address: str):
-        """
-        Set IPv6 address on interface.
-
-        :param address: IP address
-        :raises ValueError: IN case the IP is duplicated
-        """
-        address = validate.ipv6_address(address)
-        if address != "" and not self.__api.settings().allow_duplicate_ips:
-            matched = self.__api.find_items("system", {"ipv6_address": address})
-            for match in matched:
-                if self in match.interfaces.values():
-                    continue
-                else:
-                    raise ValueError(
-                        f'IPv6 address duplicate found "{address}". Object with the conflict has the name'
-                        f'"{match.name}"'
-                    )
-        self._ipv6_address = address
-
-    @property
-    def ipv6_prefix(self) -> str:
-        """
-        ipv6_prefix property.
-
-        :getter: Returns the value for ``ipv6_prefix``.
-        :setter: Sets the value for the property ``ipv6_prefix``.
-        """
-        return self._ipv6_address
-
-    @ipv6_prefix.setter
-    def ipv6_prefix(self, prefix: str):
-        """
-        Assign a IPv6 prefix
-
-        :param prefix: The new IPv6 prefix for the interface.
-        """
-        if not isinstance(prefix, str):
-            raise TypeError(
-                "Field ipv6_prefix of object NetworkInterface needs to be of type str!"
-            )
-        self._ipv6_prefix = prefix.strip()
-
-    @property
-    def ipv6_secondaries(self) -> list:
-        """
-        ipv6_secondaries property.
-
-        :getter: Returns the value for ``ipv6_secondaries``.
-        :setter: Sets the value for the property ``ipv6_secondaries``.
-        """
-        return self._ipv6_secondaries
-
-    @ipv6_secondaries.setter
-    def ipv6_secondaries(self, addresses: list):
-        """
-        Setter for the ipv6_secondaries of the NetworkInterface class.
-
-        :param addresses: The new secondaries for the interface.
-        """
-        data = utils.input_string_or_list(addresses)
-        secondaries = []
-        for address in data:
-            if address == "" or utils.is_ip(address):
-                secondaries.append(address)
-            else:
-                raise AddressValueError(
-                    "invalid format for IPv6 IP address (%s)" % address
-                )
-        self._ipv6_secondaries = secondaries
-
-    @property
-    def ipv6_default_gateway(self) -> str:
-        """
-        ipv6_default_gateway property.
-
-        :getter: Returns the value for ``ipv6_default_gateway``.
-        :setter: Sets the value for the property ``ipv6_default_gateway``.
-        """
-        return self._ipv6_default_gateway
-
-    @ipv6_default_gateway.setter
-    def ipv6_default_gateway(self, address: str):
-        """
-        Setter for the ipv6_default_gateway of the NetworkInterface class.
-
-        :param address: The new default gateway for the interface.
-        """
-        if not isinstance(address, str):
-            raise TypeError(
-                "Field ipv6_default_gateway of object NetworkInterface needs to be of type str!"
-            )
-        if address == "" or utils.is_ip(address):
-            self._ipv6_default_gateway = address.strip()
-            return
-        raise AddressValueError("invalid format of IPv6 IP address (%s)" % address)
-
-    @property
-    def ipv6_static_routes(self) -> list:
-        """
-        ipv6_static_routes property.
-
-        :getter: Returns the value for ``ipv6_static_routes``.
-        :setter: Sets the value for the property `ipv6_static_routes``.
-        """
-        return self._ipv6_static_routes
-
-    @ipv6_static_routes.setter
-    def ipv6_static_routes(self, routes: list):
-        """
-        Setter for the ipv6_static_routes of the NetworkInterface class.
-
-        :param routes: The new static routes for the interface.
-        """
-        self._ipv6_static_routes = utils.input_string_or_list(routes)
-
-    @property
-    def ipv6_mtu(self) -> str:
-        """
-        ipv6_mtu property.
-
-        :getter: Returns the value for ``ipv6_mtu``.
-        :setter: Sets the value for the property ``ipv6_mtu``.
-        """
-        return self._ipv6_mtu
-
-    @ipv6_mtu.setter
-    def ipv6_mtu(self, mtu: str):
-        """
-        Setter for the ipv6_mtu of the NetworkInterface class.
-
-        :param mtu: The new IPv6 MTU for the interface.
-        """
-        if not isinstance(mtu, str):
-            raise TypeError(
-                "Field ipv6_mtu of object NetworkInterface needs to be of type str!"
-            )
-        self._ipv6_mtu = mtu
-
-    @property
-    def mtu(self) -> str:
-        """
-        mtu property.
-
-        :getter: Returns the value for ``mtu``.
-        :setter: Sets the value for the property ``mtu``.
-        """
-        return self._mtu
-
-    @mtu.setter
-    def mtu(self, mtu: str):
-        """
-        Setter for the mtu of the NetworkInterface class.
-
-        :param mtu: The new value for the mtu of the interface
-        """
-        if not isinstance(mtu, str):
-            raise TypeError(
-                "Field mtu of object NetworkInterface needs to be type str!"
-            )
-        self._mtu = mtu
-
-    @property
-    def connected_mode(self) -> bool:
-        """
-        connected_mode property.
-
-        :getter: Returns the value for ``connected_mode``.
-        :setter: Sets the value for the property ``connected_mode``.
-        """
-        return self._connected_mode
-
-    @connected_mode.setter
-    def connected_mode(self, truthiness: bool):
-        """
-        Setter for the connected_mode of the NetworkInterface class.
-
-        :param truthiness: The new value for connected mode of the interface.
-        """
-        try:
-            truthiness = utils.input_boolean(truthiness)
-        except TypeError as e:
-            raise TypeError(
-                "Field connected_mode of object NetworkInterface needs to be of type bool!"
-            ) from e
-        self._connected_mode = truthiness
-
-    def modify_interface(self, _dict: dict):
-        """
-        Modify the interface
-
-        :param _dict: The dict with the parameter.
-        """
-        for (key, value) in list(_dict.items()):
-            (field, _) = key.split("-", 1)
-            field = field.replace("_", "").replace("-", "")
-
-            if field == "bondingopts":
-                self.bonding_opts = value
-            if field == "bridgeopts":
-                self.bridge_opts = value
-            if field == "connectedmode":
-                self.connected_mode = value
-            if field == "cnames":
-                self.cnames = value
-            if field == "dhcptag":
-                self.dhcp_tag = value
-            if field == "dnsname":
-                self.dns_name = value
-            if field == "ifgateway":
-                self.if_gateway = value
-            if field == "interfacetype":
-                self.interface_type = value
-            if field == "interfacemaster":
-                self.interface_master = value
-            if field == "ipaddress":
-                self.ip_address = value
-            if field == "ipv6address":
-                self.ipv6_address = value
-            if field == "ipv6defaultgateway":
-                self.ipv6_default_gateway = value
-            if field == "ipv6mtu":
-                self.ipv6_mtu = value
-            if field == "ipv6prefix":
-                self.ipv6_prefix = value
-            if field == "ipv6secondaries":
-                self.ipv6_secondaries = value
-            if field == "ipv6staticroutes":
-                self.ipv6_static_routes = value
-            if field == "macaddress":
-                self.mac_address = value
-            if field == "management":
-                self.management = value
-            if field == "mtu":
-                self.mtu = value
-            if field == "netmask":
-                self.netmask = value
-            if field == "static":
-                self.static = value
-            if field == "staticroutes":
-                self.static_routes = value
-            if field == "virtbridge":
-                self.virt_bridge = value
-
-
-class System(Item):
+class System(BootableItem):
     """
     A Cobbler system object.
     """
 
+    # Constants
+    TYPE_NAME = "system"
     COLLECTION_TYPE = "system"
 
-    def __init__(self, api, *args, **kwargs):
+    def __init__(self, api: "CobblerAPI", *args: Any, **kwargs: Any) -> None:
         """
         Constructor
 
         :param api: The Cobbler API
         """
-        super().__init__(api, *args, **kwargs)
-        self._interfaces: Dict[str, NetworkInterface] = {
-            "default": NetworkInterface(api)
-        }
+        super().__init__(api)
+        # Prevent attempts to clear the to_dict cache before the object is initialized.
+        self._has_initialized = False
+
+        self._interfaces: Dict[str, NetworkInterface] = {}
         self._ipv6_autoconfiguration = False
         self._repos_enabled = False
         self._autoinstall = enums.VALUE_INHERITED
-        self._boot_loaders: Union[list, str] = enums.VALUE_INHERITED
+        self._boot_loaders: Union[List[str], str] = enums.VALUE_INHERITED
         self._enable_ipxe: Union[bool, str] = enums.VALUE_INHERITED
         self._gateway = ""
         self._hostname = ""
@@ -801,104 +275,44 @@ class System(Item):
         self._virt_type = enums.VirtType.INHERITED
         self._serial_device = -1
         self._serial_baud_rate = enums.BaudRates.DISABLED
+        self._display_name = ""
 
-        # Overwrite defaults from item.py
+        # Overwrite defaults from bootable_item.py
         self._owners = enums.VALUE_INHERITED
-        self._boot_files = enums.VALUE_INHERITED
-        self._fetchable_files = enums.VALUE_INHERITED
         self._autoinstall_meta = enums.VALUE_INHERITED
         self._kernel_options = enums.VALUE_INHERITED
         self._kernel_options_post = enums.VALUE_INHERITED
-        self._mgmt_parameters = enums.VALUE_INHERITED
-        self._mgmt_classes = enums.VALUE_INHERITED
 
-    def __getattr__(self, name):
+        if len(kwargs) > 0:
+            self.from_dict(kwargs)
+        if not self._has_initialized:
+            self._has_initialized = True
+
+    def __getattr__(self, name: str) -> Any:
         if name == "kickstart":
             return self.autoinstall
-        elif name == "ks_meta":
+        if name == "ks_meta":
             return self.autoinstall_meta
-        raise AttributeError(
-            'Attribute "%s" did not exist on object type System.' % name
-        )
+        raise AttributeError(f'Attribute "{name}" did not exist on object type System.')
 
     #
-    # override some base class methods first (item.Item)
+    # override some base class methods first (BootableItem)
     #
 
     def make_clone(self):
-        _dict = self.to_dict()
-        cloned = System(self.api)
-        cloned.from_dict(_dict)
-        cloned.uid = uuid.uuid4().hex
-        return cloned
-
-    def from_dict(self, dictionary: dict):
-        """
-        Initializes the object with attributes from the dictionary.
-
-        :param dictionary: The dictionary with values.
-        """
-        if "name" in dictionary:
-            self.name = dictionary["name"]
-        if "parent" in dictionary:
-            self.parent = dictionary["parent"]
-        if "profile" in dictionary:
-            self.profile = dictionary["profile"]
-        if "image" in dictionary:
-            self.image = dictionary["image"]
-        self._remove_depreacted_dict_keys(dictionary)
-        super().from_dict(dictionary)
-
-    @property
-    def parent(self) -> Optional[Item]:
-        """
-        Return object next highest up the tree. This may be a profile or an image.
-
-        :getter: Returns the value for ``parent``.
-        :setter: Sets the value for the property ``parent``.
-        :returns: None when there is no parent or the corresponding Item.
-        """
-        if not self._parent and self.profile:
-            return self.api.profiles().find(name=self.profile)
-        elif not self._parent and self.image:
-            return self.api.images().find(name=self.image)
-        elif self._parent:
-            # We don't know what type this is, so we need to let find_items() do the magic of guessing that.
-            return self.api.find_items(what="", name=self._parent, return_list=False)
-        else:
-            return None
-
-    @parent.setter
-    def parent(self, value: str):
-        r"""
-        Setter for the ``parent`` property.
-
-        :param value: The name of a profile, an image or another System.
-        :raises TypeError: In case value was not of type ``str``.
-        :raises ValueError: In case the specified name does not map to an existing profile, image or system.
-        """
-        if not isinstance(value, str):
-            raise TypeError("The name of the parent must be of type str.")
-        if not value:
-            self._parent = ""
-            return
-        # FIXME: Add an exists method so we don't need to play try-catch here.
-        try:
-            self.api.systems().find(name=value)
-        except ValueError:
-            pass
-        try:
-            self.api.profiles().find(name=value)
-        except ValueError:
-            pass
-        try:
-            self.api.images().find(name=value)
-        except ValueError as value_error:
-            raise ValueError(
-                'Neither a system, profile or image could be found with the name "%s".'
-                % value
-            ) from value_error
-        self._parent = value
+        _dict = copy.deepcopy(self.to_dict())
+        _dict.pop("uid", None)
+        # clear all these out to avoid DHCP/DNS conflicts
+        for interface in _dict["interfaces"].values():
+            if not self.api.settings().allow_duplicate_macs:
+                interface.pop("mac_address", None)
+            if not self.api.settings().allow_duplicate_ips:
+                interface.pop("ip_address", None)
+            if not self.api.settings().allow_duplicate_ips:
+                interface.pop("ipv6_address", None)
+            if not self.api.settings().allow_duplicate_hostnames:
+                interface.pop("dns_name", None)
+        return System(self.api, **_dict)
 
     def check_if_valid(self):
         """
@@ -907,19 +321,33 @@ class System(Item):
         :raises CX: In case name is missing. Additionally either image or profile is required.
         """
         super().check_if_valid()
+        if not self.inmemory:
+            return
 
         # System specific validation
-        if self.profile is None or self.profile == "":
-            if self.image is None or self.image == "":
+        if self.profile == "":
+            if self.image == "":
                 raise CX(
-                    "Error with system %s - profile or image is required" % self.name
+                    f"Error with system {self.name} - profile or image is required"
                 )
+
+    @BootableItem.name.setter
+    def name(self, name: str) -> None:
+        """
+        The systems name.
+
+        :param name: system name string
+        """
+        # We have defined the Getter in BaseItem. As such this linter error is incorrect.
+        BootableItem.name.fset(self, name)  # type: ignore[reportOptionalCall]
+        for interface in self.interfaces.values():
+            interface.system_name = name
 
     #
     # specific methods for item.System
     #
 
-    @property
+    @LazyProperty
     def interfaces(self) -> Dict[str, NetworkInterface]:
         r"""
         Represents all interfaces owned by the system.
@@ -937,16 +365,21 @@ class System(Item):
 
         :param value: The new interfaces.
         """
-        if not isinstance(value, dict):
+        if not isinstance(value, dict):  # type: ignore
             raise TypeError("interfaces must be of type dict")
         dict_values = list(value.values())
+        collection = self.api.systems()
         if all(isinstance(x, NetworkInterface) for x in dict_values):
+            for network_iface in value.values():
+                network_iface.system_name = self.name
+            collection.update_interfaces_indexes(self, value)
             self._interfaces = value
             return
         if all(isinstance(x, dict) for x in dict_values):
             for key in value:
-                network_iface = NetworkInterface(self.api)
+                network_iface = NetworkInterface(self.api, self.name)
                 network_iface.from_dict(value[key])
+                collection.update_interface_indexes(self, key, network_iface)
                 self._interfaces[key] = network_iface
             return
         raise ValueError(
@@ -954,7 +387,7 @@ class System(Item):
             "NetworkInterface objects"
         )
 
-    def modify_interface(self, interface_values: dict):
+    def modify_interface(self, interface_values: Dict[str, Any]):
         """
         Modifies a magic interface dictionary in the form of: {"macaddress-eth0" : "aa:bb:cc:dd:ee:ff"}
         """
@@ -964,20 +397,23 @@ class System(Item):
                 self.__create_interface(interface)
             self.interfaces[interface].modify_interface({key: interface_values[key]})
 
-    def delete_interface(self, name: Union[str, dict]):
+    def delete_interface(self, name: Union[str, Dict[Any, Any]]) -> None:
         """
         Used to remove an interface.
 
         :raises TypeError: If the name of the interface is not of type str or dict.
         """
+        collection = self.api.systems()
         if isinstance(name, str):
             if not name:
                 return
             if name in self.interfaces:
+                collection.remove_interface_from_indexes(self, name)
                 self.interfaces.pop(name)
                 return
         if isinstance(name, dict):
             interface_name = name.get("interface", "")
+            collection.remove_interface_from_indexes(self, interface_name)
             self.interfaces.pop(interface_name)
             return
         raise TypeError("The name of the interface must be of type str or dict")
@@ -989,25 +425,24 @@ class System(Item):
         :raises TypeError: In case on of the params was not a ``str``.
         :raises ValueError: In case the name for the old interface does not exist or the new name does.
         """
-        if not isinstance(old_name, str):
+        if not isinstance(old_name, str):  # type: ignore
             raise TypeError("The old_name of the interface must be of type str")
-        if not isinstance(new_name, str):
+        if not isinstance(new_name, str):  # type: ignore
             raise TypeError("The new_name of the interface must be of type str")
         if old_name not in self.interfaces:
-            raise ValueError('Interface "%s" does not exist' % old_name)
+            raise ValueError(f'Interface "{old_name}" does not exist')
         if new_name in self.interfaces:
-            raise ValueError('Interface "%s" already exists' % new_name)
+            raise ValueError(f'Interface "{new_name}" already exists')
         self.interfaces[new_name] = self.interfaces[old_name]
         del self.interfaces[old_name]
 
-    @property
+    @LazyProperty
     def hostname(self) -> str:
         """
         hostname property.
 
         :getter: Returns the value for ``hostname``.
         :setter: Sets the value for the property ``hostname``.
-        :return:
         """
         return self._hostname
 
@@ -1016,21 +451,19 @@ class System(Item):
         """
         Setter for the hostname of the System class.
 
-
-        :param value:
+        :param value: The new hostname
         """
-        if not isinstance(value, str):
+        if not isinstance(value, str):  # type: ignore
             raise TypeError("Field hostname of object system needs to be of type str!")
         self._hostname = value
 
-    @property
+    @LazyProperty
     def status(self) -> str:
         """
         status property.
 
         :getter: Returns the value for ``status``.
         :setter: Sets the value for the property ``status``.
-        :return:
         """
         return self._status
 
@@ -1039,15 +472,14 @@ class System(Item):
         """
         Setter for the status of the System class.
 
-
-        :param status:
+        :param status: The new system status.
         """
-        if not isinstance(status, str):
+        if not isinstance(status, str):  # type: ignore
             raise TypeError("Field status of object system needs to be of type str!")
         self._status = status
 
-    @property
-    def boot_loaders(self) -> list:
+    @InheritableProperty
+    def boot_loaders(self) -> List[str]:
         """
         boot_loaders property.
 
@@ -1055,37 +487,37 @@ class System(Item):
 
         :getter: Returns the value for ``boot_loaders``.
         :setter: Sets the value for the property ``boot_loaders``.
-        :return:
         """
         return self._resolve("boot_loaders")
 
-    @boot_loaders.setter
-    def boot_loaders(self, boot_loaders: Union[str, list]):
+    @boot_loaders.setter  # type: ignore[no-redef]
+    def boot_loaders(self, boot_loaders: Union[str, List[str]]):
         """
         Setter of the boot loaders.
 
         :param boot_loaders: The boot loaders for the system.
         :raises CX: This is risen in case the bootloaders set are not valid ones.
         """
-        if not isinstance(boot_loaders, (str, list)):
+        if not isinstance(boot_loaders, (str, list)):  # type: ignore
             raise TypeError("The bootloaders need to be either a str or list")
 
         if boot_loaders == enums.VALUE_INHERITED:
             self._boot_loaders = enums.VALUE_INHERITED
             return
 
-        if boot_loaders == "" or boot_loaders == []:
+        if boot_loaders in ("", []):
             self._boot_loaders = []
             return
 
         if isinstance(boot_loaders, str):
-            boot_loaders_split = utils.input_string_or_list(boot_loaders)
+            boot_loaders_split = input_converters.input_string_or_list(boot_loaders)
         else:
             boot_loaders_split = boot_loaders
 
-        parent = self.parent
+        parent = self.logical_parent
         if parent is not None:
-            parent_boot_loaders = parent.boot_loaders
+            # This can only be an item type that has the boot loaders property
+            parent_boot_loaders: List[str] = parent.boot_loaders  # type: ignore
         else:
             self.logger.warning(
                 'Parent of System "%s" could not be found for resolving the parent bootloaders.',
@@ -1094,12 +526,12 @@ class System(Item):
             parent_boot_loaders = []
         if not set(boot_loaders_split).issubset(parent_boot_loaders):
             raise CX(
-                'Error with system "%s" - not all boot_loaders are supported (given: "%s"; supported:'
-                '"%s")' % (self.name, str(boot_loaders_split), str(parent_boot_loaders))
+                f'Error with system "{self.name}" - not all boot_loaders are supported (given:'
+                f'"{str(boot_loaders_split)}"; supported: "{str(parent_boot_loaders)}")'
             )
         self._boot_loaders = boot_loaders_split
 
-    @property
+    @InheritableProperty
     def server(self) -> str:
         """
         server property.
@@ -1111,22 +543,22 @@ class System(Item):
         """
         return self._resolve("server")
 
-    @server.setter
+    @server.setter  # type: ignore[no-redef]
     def server(self, server: str):
         """
         If a system can't reach the boot server at the value configured in settings
         because it doesn't have the same name on it's subnet this is there for an override.
 
-        :param server:
+        :param server: The new value for the ``server`` property.
         :raises TypeError: In case server is no string.
         """
-        if not isinstance(server, str):
+        if not isinstance(server, str):  # type: ignore
             raise TypeError("Field server of object system needs to be of type str!")
         if server == "":
             server = enums.VALUE_INHERITED
         self._server = server
 
-    @property
+    @InheritableProperty
     def next_server_v4(self) -> str:
         """
         next_server_v4 property.
@@ -1135,11 +567,10 @@ class System(Item):
 
         :getter: Returns the value for ``next_server_v4``.
         :setter: Sets the value for the property ``next_server_v4``.
-        :return:
         """
         return self._resolve("next_server_v4")
 
-    @next_server_v4.setter
+    @next_server_v4.setter  # type: ignore[no-redef]
     def next_server_v4(self, server: str = ""):
         """
         Setter for the IPv4 next server. See profile.py for more details.
@@ -1147,14 +578,14 @@ class System(Item):
         :param server: The address of the IPv4 next server. Must be a string or ``enums.VALUE_INHERITED``.
         :raises TypeError: In case server is no string.
         """
-        if not isinstance(server, str):
+        if not isinstance(server, str):  # type: ignore
             raise TypeError("next_server_v4 must be a string.")
         if server == enums.VALUE_INHERITED:
             self._next_server_v4 = enums.VALUE_INHERITED
         else:
             self._next_server_v4 = validate.ipv4_address(server)
 
-    @property
+    @InheritableProperty
     def next_server_v6(self) -> str:
         """
         next_server_v6 property.
@@ -1163,11 +594,10 @@ class System(Item):
 
         :getter: Returns the value for ``next_server_v6``.
         :setter: Sets the value for the property ``next_server_v6``.
-        :return:
         """
         return self._resolve("next_server_v6")
 
-    @next_server_v6.setter
+    @next_server_v6.setter  # type: ignore[no-redef]
     def next_server_v6(self, server: str = ""):
         """
         Setter for the IPv6 next server. See profile.py for more details.
@@ -1175,42 +605,41 @@ class System(Item):
         :param server: The address of the IPv6 next server. Must be a string or ``enums.VALUE_INHERITED``.
         :raises TypeError: In case server is no string.
         """
-        if not isinstance(server, str):
+        if not isinstance(server, str):  # type: ignore
             raise TypeError("next_server_v6 must be a string.")
         if server == enums.VALUE_INHERITED:
             self._next_server_v6 = enums.VALUE_INHERITED
         else:
             self._next_server_v6 = validate.ipv6_address(server)
 
-    @property
+    @InheritableProperty
     def filename(self) -> str:
         """
         filename property.
 
         :getter: Returns the value for ``filename``.
         :setter: Sets the value for the property ``filename``.
-        :return:
         """
+        if self.image != "":
+            return ""
         return self._resolve("filename")
 
-    @filename.setter
+    @filename.setter  # type: ignore[no-redef]
     def filename(self, filename: str):
         """
         Setter for the filename of the System class.
 
-
-        :param filename:
+        :param filename: The new value for the ``filename`` property.
         :raises TypeError: In case filename is no string.
-        :return:
         """
-        if not isinstance(filename, str):
+        if not isinstance(filename, str):  # type: ignore
             raise TypeError("Field filename of object system needs to be of type str!")
         if not filename:
             self._filename = enums.VALUE_INHERITED
         else:
             self._filename = filename.strip()
 
-    @property
+    @InheritableProperty
     def proxy(self) -> str:
         """
         proxy property. This corresponds per default to the setting``proxy_url_int``.
@@ -1220,9 +649,11 @@ class System(Item):
         :getter: Returns the value for ``proxy``.
         :setter: Sets the value for the property ``proxy``.
         """
+        if self.profile != "":
+            return self._resolve("proxy")
         return self._resolve("proxy_url_int")
 
-    @proxy.setter
+    @proxy.setter  # type: ignore[no-redef]
     def proxy(self, proxy: str):
         """
         Setter for the proxy of the System class.
@@ -1230,11 +661,11 @@ class System(Item):
         :param proxy: The new value for the proxy.
         :raises TypeError: In case proxy is no string.
         """
-        if not isinstance(proxy, str):
+        if not isinstance(proxy, str):  # type: ignore
             raise TypeError("Field proxy of object system needs to be of type str!")
         self._proxy = proxy
 
-    @property
+    @InheritableProperty
     def redhat_management_key(self) -> str:
         """
         redhat_management_key property.
@@ -1246,7 +677,7 @@ class System(Item):
         """
         return self._resolve("redhat_management_key")
 
-    @redhat_management_key.setter
+    @redhat_management_key.setter  # type: ignore[no-redef]
     def redhat_management_key(self, management_key: str):
         """
         Setter for the redhat_management_key of the System class.
@@ -1254,11 +685,11 @@ class System(Item):
         :param management_key: The new value for the redhat management key
         :raises TypeError: In case management_key is no string.
         """
-        if not isinstance(management_key, str):
+        if not isinstance(management_key, str):  # type: ignore
             raise TypeError(
                 "Field redhat_management_key of object system needs to be of type str!"
             )
-        if management_key is None or management_key == "":
+        if management_key == "":
             self._redhat_management_key = enums.VALUE_INHERITED
         self._redhat_management_key = management_key
 
@@ -1274,10 +705,22 @@ class System(Item):
 
         if intf.mac_address != "":
             return intf.mac_address.strip()
-        else:
-            return None
+        return None
 
-    def get_ip_address(self, interface: str):
+    @property
+    def get_mac_addresses(self) -> Set[str]:
+        """
+        Get the set of system mac addresses.
+        """
+        macs: Set[str] = set()
+        for intf in self.interfaces.values():
+            mac = intf.mac_address
+            if mac:
+                mac = mac.strip()
+            macs.add(mac)
+        return macs
+
+    def get_ip_address(self, interface: str) -> str:
         """
         Get the IP address for the given interface.
 
@@ -1286,8 +729,46 @@ class System(Item):
         intf = self.__get_interface(interface)
         if intf.ip_address:
             return intf.ip_address.strip()
-        else:
-            return ""
+        return ""
+
+    @property
+    def get_ipv4_addresses(self) -> Set[str]:
+        """
+        Get the set of system ipv4 addresses.
+        """
+        ips: Set[str] = set()
+        for intf in self.interfaces.values():
+            ipv4 = intf.ip_address
+            if ipv4:
+                ipv4 = ipv4.strip()
+            ips.add(ipv4)
+        return ips
+
+    @property
+    def get_ipv6_addresses(self) -> Set[str]:
+        """
+        Get the set of system ipv6 addresses.
+        """
+        ips: Set[str] = set()
+        for intf in self.interfaces.values():
+            ipv6 = intf.ipv6_address
+            if ipv6:
+                ipv6 = ipv6.strip()
+            ips.add(ipv6)
+        return ips
+
+    @property
+    def get_dns_names(self) -> Set[str]:
+        """
+        Get the set of system ipv6 addresses.
+        """
+        dns_names: Set[str] = set()
+        for intf in self.interfaces.values():
+            dns_name = intf.dns_name
+            if dns_name:
+                dns_name = dns_name.strip()
+            dns_names.add(dns_name)
+        return dns_names
 
     def is_management_supported(self, cidr_ok: bool = True) -> bool:
         """
@@ -1311,9 +792,11 @@ class System(Item):
 
         :param interface: The name of the interface
         """
-        self.interfaces[interface] = NetworkInterface(self.api)
+        self.interfaces[interface] = NetworkInterface(self.api, self.name)
 
-    def __get_interface(self, interface_name: str = "default") -> NetworkInterface:
+    def __get_interface(
+        self, interface_name: Optional[str] = "default"
+    ) -> NetworkInterface:
         """
         Tries to retrieve an interface and creates it in case the interface doesn't exist. If no name is given the
         default interface is retrieved.
@@ -1324,7 +807,7 @@ class System(Item):
         """
         if interface_name is None:
             interface_name = "default"
-        if not isinstance(interface_name, str):
+        if not isinstance(interface_name, str):  # type: ignore
             raise TypeError("The name of an interface must always be of type str!")
         if not interface_name:
             interface_name = "default"
@@ -1332,14 +815,13 @@ class System(Item):
             self.__create_interface(interface_name)
         return self._interfaces[interface_name]
 
-    @property
+    @LazyProperty
     def gateway(self):
         """
         gateway property.
 
         :getter: Returns the value for ``gateway``.
         :setter: Sets the value for the property ``gateway``.
-        :return:
         """
         return self._gateway
 
@@ -1353,20 +835,19 @@ class System(Item):
         """
         self._gateway = validate.ipv4_address(gateway)
 
-    @property
-    def name_servers(self) -> list:
+    @InheritableProperty
+    def name_servers(self) -> List[str]:
         """
         name_servers property.
         FIXME: Differentiate between IPv4/6
 
         :getter: Returns the value for ``name_servers``.
         :setter: Sets the value for the property ``name_servers``.
-        :return:
         """
-        return self._name_servers
+        return self._resolve("name_servers")
 
     @name_servers.setter
-    def name_servers(self, data: Union[str, list]):
+    def name_servers(self, data: Union[str, List[str]]):
         """
         Set the DNS servers.
         FIXME: Differentiate between IPv4/6
@@ -1376,19 +857,18 @@ class System(Item):
         """
         self._name_servers = validate.name_servers(data)
 
-    @property
-    def name_servers_search(self) -> list:
+    @LazyProperty
+    def name_servers_search(self) -> List[str]:
         """
         name_servers_search property.
 
         :getter: Returns the value for ``name_servers_search``.
         :setter: Sets the value for the property ``name_servers_search``.
-        :return:
         """
-        return self._name_servers_search
+        return self._resolve("name_servers_search")
 
     @name_servers_search.setter
-    def name_servers_search(self, data: Union[str, list]):
+    def name_servers_search(self, data: Union[str, List[Any]]):
         """
         Set the DNS search paths.
 
@@ -1397,14 +877,13 @@ class System(Item):
         """
         self._name_servers_search = validate.name_servers_search(data)
 
-    @property
+    @LazyProperty
     def ipv6_autoconfiguration(self) -> bool:
         """
         ipv6_autoconfiguration property.
 
         :getter: Returns the value for ``ipv6_autoconfiguration``.
         :setter: Sets the value for the property ``ipv6_autoconfiguration``.
-        :return:
         """
         return self._ipv6_autoconfiguration
 
@@ -1413,22 +892,20 @@ class System(Item):
         """
         Setter for the ipv6_autoconfiguration of the System class.
 
-
-        :param value:
+        :param value: The new value for the ``ipv6_autoconfiguration`` property.
         """
-        value = utils.input_boolean(value)
-        if not isinstance(value, bool):
+        value = input_converters.input_boolean(value)
+        if not isinstance(value, bool):  # type: ignore
             raise TypeError("ipv6_autoconfiguration needs to be of type bool")
         self._ipv6_autoconfiguration = value
 
-    @property
+    @LazyProperty
     def ipv6_default_device(self) -> str:
         """
         ipv6_default_device property.
 
         :getter: Returns the value for ``ipv6_default_device``.
         :setter: Sets the value for the property ``ipv6_default_device``.
-        :return:
         """
         return self._ipv6_default_device
 
@@ -1437,18 +914,15 @@ class System(Item):
         """
         Setter for the ipv6_default_device of the System class.
 
-
-        :param interface_name:
+        :param interface_name: The new value for the ``ipv6_default_device`` property.
         """
-        if not isinstance(interface_name, str):
+        if not isinstance(interface_name, str):  # type: ignore
             raise TypeError(
                 "Field ipv6_default_device of object system needs to be of type str!"
             )
-        if interface_name is None:
-            interface_name = ""
         self._ipv6_default_device = interface_name
 
-    @property
+    @InheritableProperty
     def enable_ipxe(self) -> bool:
         """
         enable_ipxe property.
@@ -1457,31 +931,33 @@ class System(Item):
 
         :getter: Returns the value for ``enable_ipxe``.
         :setter: Sets the value for the property ``enable_ipxe``.
-        :return:
         """
         return self._resolve("enable_ipxe")
 
-    @enable_ipxe.setter
-    def enable_ipxe(self, enable_ipxe: bool):
+    @enable_ipxe.setter  # type: ignore[no-redef]
+    def enable_ipxe(self, enable_ipxe: Union[str, bool]):
         """
         Sets whether the system will use iPXE for booting.
 
         :param enable_ipxe: If ipxe should be enabled or not.
         :raises TypeError: In case enable_ipxe is not a boolean.
         """
-        enable_ipxe = utils.input_boolean(enable_ipxe)
-        if not isinstance(enable_ipxe, bool):
+        if enable_ipxe == enums.VALUE_INHERITED:
+            self._enable_ipxe = enums.VALUE_INHERITED
+            return
+
+        enable_ipxe = input_converters.input_boolean(enable_ipxe)
+        if not isinstance(enable_ipxe, bool):  # type: ignore
             raise TypeError("enable_ipxe needs to be of type bool")
         self._enable_ipxe = enable_ipxe
 
-    @property
+    @LazyProperty
     def profile(self) -> str:
         """
         profile property.
 
         :getter: Returns the value for ``profile``.
         :setter: Sets the value for the property ``profile``.
-        :return:
         """
         return self._profile
 
@@ -1495,51 +971,34 @@ class System(Item):
         :raises TypeError: In case profile_name is no string.
         :raises ValueError: In case profile_name does not exist.
         """
-        if not isinstance(profile_name, str):
+        if not isinstance(profile_name, str):  # type: ignore
             raise TypeError("The name of a profile needs to be of type str.")
 
+        items = self.api.systems()
+        old_profile = self._profile
         if profile_name in ["delete", "None", "~", ""]:
             self._profile = ""
+            items.update_index_value(self, "profile", old_profile, "")
             return
 
-        profile = self.api.profiles().find(name=profile_name)
+        profile = self.api.profiles().find(name=profile_name, return_list=False)
+        if isinstance(profile, list):
+            raise ValueError("Search returned ambigous match!")
         if profile is None:
-            raise ValueError(
-                'Profile with the name "%s" is not existing' % profile_name
-            )
-
-        old_parent = self.parent
-        if isinstance(old_parent, Item):
-            if self.name in old_parent.children:
-                old_parent.children.remove(self.name)
-            else:
-                self.logger.debug(
-                    'Name of System "%s" was not found in the children of Item "%s"',
-                    self.name,
-                    self.parent.name,
-                )
-        else:
-            self.logger.debug(
-                'Parent of System "%s" not found. Thus skipping removal from children list.',
-                self.name,
-            )
+            raise ValueError(f'Profile with the name "{profile_name}" is not existing')
 
         self.image = ""  # mutual exclusion rule
-
         self._profile = profile_name
         self.depth = profile.depth + 1  # subprofiles have varying depths.
-        new_parent = self.parent
-        if isinstance(new_parent, Item) and self.name not in new_parent.children:
-            new_parent.children.append(self.name)
+        items.update_index_value(self, "profile", old_profile, profile_name)
 
-    @property
+    @LazyProperty
     def image(self) -> str:
         """
         image property.
 
         :getter: Returns the value for ``image``.
         :setter: Sets the value for the property ``image``.
-        :return:
         """
         return self._image
 
@@ -1553,42 +1012,28 @@ class System(Item):
         :raises ValueError: In case the image name was invalid.
         :raises TypeError: In case image_name is no string.
         """
-        if not isinstance(image_name, str):
+        if not isinstance(image_name, str):  # type: ignore
             raise TypeError("The name of an image must be of type str.")
 
+        items = self.api.systems()
+        old_image = self._image
         if image_name in ["delete", "None", "~", ""]:
             self._image = ""
+            items.update_index_value(self, "image", old_image, "")
             return
 
         img = self.api.images().find(name=image_name)
+        if isinstance(img, list):
+            raise ValueError("Search returned ambigous match!")
         if img is None:
-            raise ValueError('Image with the name "%s" is not existing' % image_name)
-
-        old_parent = self.parent
-        if isinstance(old_parent, Item):
-            if self.name in old_parent.children:
-                old_parent.children.remove(self.name)
-            else:
-                self.logger.debug(
-                    'Name of System "%s" was not found in the children of Item "%s"',
-                    self.name,
-                    self.parent.name,
-                )
-        else:
-            self.logger.debug(
-                'Parent of System "%s" not found. Thus skipping removal from children list.',
-                self.name,
-            )
+            raise ValueError(f'Image with the name "{image_name}" is not existing')
 
         self.profile = ""  # mutual exclusion rule
-
         self._image = image_name
         self.depth = img.depth + 1
-        new_parent = self.parent
-        if isinstance(new_parent, Item) and self.name not in new_parent.children:
-            new_parent.children.append(self.name)
+        items.update_index_value(self, "image", old_image, image_name)
 
-    @property
+    @InheritableProperty
     def virt_cpus(self) -> int:
         """
         virt_cpus property.
@@ -1600,16 +1045,20 @@ class System(Item):
         """
         return self._resolve("virt_cpus")
 
-    @virt_cpus.setter
-    def virt_cpus(self, num: int):
+    @virt_cpus.setter  # type: ignore[no-redef]
+    def virt_cpus(self, num: Union[int, str]):
         """
         Setter for the virt_cpus of the System class.
 
         :param num: The new value for the number of CPU cores.
         """
+        if num == enums.VALUE_INHERITED:
+            self._virt_cpus = enums.VALUE_INHERITED
+            return
+
         self._virt_cpus = validate.validate_virt_cpus(num)
 
-    @property
+    @InheritableProperty
     def virt_file_size(self) -> float:
         """
         virt_file_size property.
@@ -1621,7 +1070,7 @@ class System(Item):
         """
         return self._resolve("virt_file_size")
 
-    @virt_file_size.setter
+    @virt_file_size.setter  # type: ignore[no-redef]
     def virt_file_size(self, num: float):
         """
         Setter for the virt_file_size of the System class.
@@ -1631,7 +1080,7 @@ class System(Item):
         """
         self._virt_file_size = validate.validate_virt_file_size(num)
 
-    @property
+    @InheritableProperty
     def virt_disk_driver(self) -> enums.VirtDiskDrivers:
         """
         virt_disk_driver property.
@@ -1643,7 +1092,7 @@ class System(Item):
         """
         return self._resolve_enum("virt_disk_driver", enums.VirtDiskDrivers)
 
-    @virt_disk_driver.setter
+    @virt_disk_driver.setter  # type: ignore[no-redef]
     def virt_disk_driver(self, driver: Union[str, enums.VirtDiskDrivers]):
         """
         Setter for the virt_disk_driver of the System class.
@@ -1652,7 +1101,7 @@ class System(Item):
         """
         self._virt_disk_driver = enums.VirtDiskDrivers.to_enum(driver)
 
-    @property
+    @InheritableProperty
     def virt_auto_boot(self) -> bool:
         """
         virt_auto_boot property.
@@ -1664,8 +1113,8 @@ class System(Item):
         """
         return self._resolve("virt_auto_boot")
 
-    @virt_auto_boot.setter
-    def virt_auto_boot(self, value: bool):
+    @virt_auto_boot.setter  # type: ignore[no-redef]
+    def virt_auto_boot(self, value: Union[bool, str]):
         """
         Setter for the virt_auto_boot of the System class.
 
@@ -1676,7 +1125,7 @@ class System(Item):
             return
         self._virt_auto_boot = validate.validate_virt_auto_boot(value)
 
-    @property
+    @LazyProperty
     def virt_pxe_boot(self) -> bool:
         """
         virt_pxe_boot property.
@@ -1695,7 +1144,7 @@ class System(Item):
         """
         self._virt_pxe_boot = validate.validate_virt_pxe_boot(num)
 
-    @property
+    @InheritableProperty
     def virt_ram(self) -> int:
         """
         virt_ram property.
@@ -1707,7 +1156,7 @@ class System(Item):
         """
         return self._resolve("virt_ram")
 
-    @virt_ram.setter
+    @virt_ram.setter  # type: ignore[no-redef]
     def virt_ram(self, num: Union[int, str]):
         """
         Setter for the virt_ram of the System class.
@@ -1717,7 +1166,7 @@ class System(Item):
         """
         self._virt_ram = validate.validate_virt_ram(num)
 
-    @property
+    @InheritableProperty
     def virt_type(self) -> enums.VirtType:
         """
         virt_type property.
@@ -1729,7 +1178,7 @@ class System(Item):
         """
         return self._resolve_enum("virt_type", enums.VirtType)
 
-    @virt_type.setter
+    @virt_type.setter  # type: ignore[no-redef]
     def virt_type(self, vtype: Union[enums.VirtType, str]):
         """
         Setter for the virt_type of the System class.
@@ -1738,7 +1187,7 @@ class System(Item):
         """
         self._virt_type = enums.VirtType.to_enum(vtype)
 
-    @property
+    @InheritableProperty
     def virt_path(self) -> str:
         """
         virt_path property.
@@ -1750,7 +1199,7 @@ class System(Item):
         """
         return self._resolve("virt_path")
 
-    @virt_path.setter
+    @virt_path.setter  # type: ignore[no-redef]
     def virt_path(self, path: str):
         """
         Setter for the virt_path of the System class.
@@ -1759,7 +1208,7 @@ class System(Item):
         """
         self._virt_path = validate.validate_virt_path(path, for_system=True)
 
-    @property
+    @LazyProperty
     def netboot_enabled(self) -> bool:
         """
         netboot_enabled property.
@@ -1786,23 +1235,22 @@ class System(Item):
         :param: netboot_enabled:
         :raises TypeError: In case netboot_enabled is not a boolean.
         """
-        netboot_enabled = utils.input_boolean(netboot_enabled)
-        if not isinstance(netboot_enabled, bool):
+        netboot_enabled = input_converters.input_boolean(netboot_enabled)
+        if not isinstance(netboot_enabled, bool):  # type: ignore
             raise TypeError("netboot_enabled needs to be a bool")
         self._netboot_enabled = netboot_enabled
 
-    @property
+    @InheritableProperty
     def autoinstall(self) -> str:
         """
         autoinstall property.
 
         :getter: Returns the value for ``autoinstall``.
         :setter: Sets the value for the property ``autoinstall``.
-        :return:
         """
         return self._resolve("autoinstall")
 
-    @autoinstall.setter
+    @autoinstall.setter  # type: ignore[no-redef]
     def autoinstall(self, autoinstall: str):
         """
         Set the automatic installation template filepath, this must be a local file.
@@ -1814,14 +1262,13 @@ class System(Item):
             autoinstall
         )
 
-    @property
+    @LazyProperty
     def power_type(self) -> str:
         """
         power_type property.
 
         :getter: Returns the value for ``power_type``.
         :setter: Sets the value for the property ``power_type``.
-        :return:
         """
         return self._power_type
 
@@ -1830,11 +1277,10 @@ class System(Item):
         """
         Setter for the power_type of the System class.
 
-
-        :param power_type:
+        :param power_type: The new value for the ``power_type`` property.
         :raises TypeError: In case power_type is no string.
         """
-        if not isinstance(power_type, str):
+        if not isinstance(power_type, str):  # type: ignore
             raise TypeError("power_type must be of type str")
         if not power_type:
             self._power_type = ""
@@ -1842,14 +1288,13 @@ class System(Item):
         power_manager.validate_power_type(power_type)
         self._power_type = power_type
 
-    @property
+    @LazyProperty
     def power_identity_file(self) -> str:
         """
         power_identity_file property.
 
         :getter: Returns the value for ``power_identity_file``.
         :setter: Sets the value for the property ``power_identity_file``.
-        :return:
         """
         return self._power_identity_file
 
@@ -1858,25 +1303,23 @@ class System(Item):
         """
         Setter for the power_identity_file of the System class.
 
-
-        :param power_identity_file:
+        :param power_identity_file: The new value for the ``power_identity_file`` property.
         :raises TypeError: In case power_identity_file is no string.
         """
-        if not isinstance(power_identity_file, str):
+        if not isinstance(power_identity_file, str):  # type: ignore
             raise TypeError(
                 "Field power_identity_file of object system needs to be of type str!"
             )
-        utils.safe_filter(power_identity_file)
+        filesystem_helpers.safe_filter(power_identity_file)
         self._power_identity_file = power_identity_file
 
-    @property
+    @LazyProperty
     def power_options(self) -> str:
         """
         power_options property.
 
         :getter: Returns the value for ``power_options``.
         :setter: Sets the value for the property ``power_options``.
-        :return:
         """
         return self._power_options
 
@@ -1885,25 +1328,23 @@ class System(Item):
         """
         Setter for the power_options of the System class.
 
-
-        :param power_options:
+        :param power_options: The new value for the ``power_options`` property.
         :raises TypeError: In case power_options is no string.
         """
-        if not isinstance(power_options, str):
+        if not isinstance(power_options, str):  # type: ignore
             raise TypeError(
                 "Field power_options of object system needs to be of type str!"
             )
-        utils.safe_filter(power_options)
+        filesystem_helpers.safe_filter(power_options)
         self._power_options = power_options
 
-    @property
+    @LazyProperty
     def power_user(self) -> str:
         """
         power_user property.
 
         :getter: Returns the value for ``power_user``.
         :setter: Sets the value for the property ``power_user``.
-        :return:
         """
         return self._power_user
 
@@ -1912,25 +1353,23 @@ class System(Item):
         """
         Setter for the power_user of the System class.
 
-
-        :param power_user:
+        :param power_user: The new value for the ``power_user`` property.
         :raises TypeError: In case power_user is no string.
         """
-        if not isinstance(power_user, str):
+        if not isinstance(power_user, str):  # type: ignore
             raise TypeError(
                 "Field power_user of object system needs to be of type str!"
             )
-        utils.safe_filter(power_user)
+        filesystem_helpers.safe_filter(power_user)
         self._power_user = power_user
 
-    @property
+    @LazyProperty
     def power_pass(self) -> str:
         """
         power_pass property.
 
         :getter: Returns the value for ``power_pass``.
         :setter: Sets the value for the property ``power_pass``.
-        :return:
         """
         return self._power_pass
 
@@ -1939,25 +1378,23 @@ class System(Item):
         """
         Setter for the power_pass of the System class.
 
-
-        :param power_pass:
+        :param power_pass: The new value for the ``power_pass`` property.
         :raises TypeError: In case power_pass is no string.
         """
-        if not isinstance(power_pass, str):
+        if not isinstance(power_pass, str):  # type: ignore
             raise TypeError(
                 "Field power_pass of object system needs to be of type str!"
             )
-        utils.safe_filter(power_pass)
+        filesystem_helpers.safe_filter(power_pass)
         self._power_pass = power_pass
 
-    @property
+    @LazyProperty
     def power_address(self) -> str:
         """
         power_address property.
 
         :getter: Returns the value for ``power_address``.
         :setter: Sets the value for the property ``power_address``.
-        :return:
         """
         return self._power_address
 
@@ -1966,25 +1403,23 @@ class System(Item):
         """
         Setter for the power_address of the System class.
 
-
-        :param power_address:
+        :param power_address: The new value for the ``power_address`` property.
         :raises TypeError: In case power_address is no string.
         """
-        if not isinstance(power_address, str):
+        if not isinstance(power_address, str):  # type: ignore
             raise TypeError(
                 "Field power_address of object system needs to be of type str!"
             )
-        utils.safe_filter(power_address)
+        filesystem_helpers.safe_filter(power_address)
         self._power_address = power_address
 
-    @property
+    @LazyProperty
     def power_id(self) -> str:
         """
         power_id property.
 
         :getter: Returns the value for ``power_id``.
         :setter: Sets the value for the property ``power_id``.
-        :return:
         """
         return self._power_id
 
@@ -1993,23 +1428,21 @@ class System(Item):
         """
         Setter for the power_id of the System class.
 
-
-        :param power_id:
+        :param power_id: The new value for the ``power_id`` property.
         :raises TypeError: In case power_id is no string.
         """
-        if not isinstance(power_id, str):
+        if not isinstance(power_id, str):  # type: ignore
             raise TypeError("Field power_id of object system needs to be of type str!")
-        utils.safe_filter(power_id)
+        filesystem_helpers.safe_filter(power_id)
         self._power_id = power_id
 
-    @property
+    @LazyProperty
     def repos_enabled(self) -> bool:
         """
         repos_enabled property.
 
         :getter: Returns the value for ``repos_enabled``.
         :setter: Sets the value for the property ``repos_enabled``.
-        :return:
         """
         return self._repos_enabled
 
@@ -2018,18 +1451,17 @@ class System(Item):
         """
         Setter for the repos_enabled of the System class.
 
-
-        :param repos_enabled:
+        :param repos_enabled: The new value for the ``repos_enabled`` property.
         :raises TypeError: In case is no string.
         """
-        repos_enabled = utils.input_boolean(repos_enabled)
-        if not isinstance(repos_enabled, bool):
+        repos_enabled = input_converters.input_boolean(repos_enabled)
+        if not isinstance(repos_enabled, bool):  # type: ignore
             raise TypeError(
                 "Field repos_enabled of object system needs to be of type bool!"
             )
         self._repos_enabled = repos_enabled
 
-    @property
+    @LazyProperty
     def serial_device(self) -> int:
         """
         serial_device property. "-1" disables the serial device functionality completely.
@@ -2048,7 +1480,7 @@ class System(Item):
         """
         self._serial_device = validate.validate_serial_device(device_number)
 
-    @property
+    @LazyProperty
     def serial_baud_rate(self) -> enums.BaudRates:
         """
         serial_baud_rate property. The value "disabled" will disable the functionality completely.
@@ -2063,33 +1495,13 @@ class System(Item):
         """
         Setter for the serial_baud_rate of the System class.
 
-
-        :param baud_rate:
+        :param baud_rate: The new value for the ``baud_rate`` property.
         """
         self._serial_baud_rate = validate.validate_serial_baud_rate(baud_rate)
 
-    @property
-    def children(self) -> List[str]:
-        """
-        children property.
-
-        :getter: Returns the value for ``children``.
-        :setter: Sets the value for the property ``children``.
-        :return:
-        """
-        return self._children
-
-    @children.setter
-    def children(self, value: List[str]):
-        """
-        Setter for the children of the System class.
-
-
-        :param value:
-        """
-        self._children = value
-
-    def get_config_filename(self, interface: str, loader: Optional[str] = None):
+    def get_config_filename(
+        self, interface: str, loader: Optional[str] = None
+    ) -> Optional[str]:
         """
         The configuration file for each system pxe uses is either a form of the MAC address or the hex version or the
         IP address. If none of that is available, just use the given name, though the name given will be unsuitable for
@@ -2102,10 +1514,12 @@ class System(Item):
         """
         boot_loaders = self.boot_loaders
         if loader is None:
-            if "grub" in boot_loaders or len(boot_loaders) < 1:
+            if (
+                "grub" in boot_loaders or len(boot_loaders) < 1
+            ):  # pylint: disable=unsupported-membership-test
                 loader = "grub"
             else:
-                loader = boot_loaders[0]
+                loader = boot_loaders[0]  # pylint: disable=unsubscriptable-object
 
         if interface not in self.interfaces:
             self.logger.warning(
@@ -2121,13 +1535,30 @@ class System(Item):
             return "default"
 
         mac = self.get_mac_address(interface)
-        ip = self.get_ip_address(interface)
+        ip_address = self.get_ip_address(interface)
         if mac is not None and mac != "":
             if loader == "grub":
                 return mac.lower()
-            else:
-                return "01-" + "-".join(mac.split(":")).lower()
-        elif ip is not None and ip != "":
-            return utils.get_host_ip(ip)
-        else:
-            return self.name
+            return "01-" + "-".join(mac.split(":")).lower()
+        if ip_address != "":
+            return utils.get_host_ip(ip_address)
+        return self.name
+
+    @LazyProperty
+    def display_name(self) -> str:
+        """
+        Returns the display name.
+
+        :getter: Returns the display name for the boot menu.
+        :setter: Sets the display name for the boot menu.
+        """
+        return self._display_name
+
+    @display_name.setter
+    def display_name(self, display_name: str):
+        """
+        Setter for the display_name of the item.
+
+        :param display_name: The new display_name. If ``None`` the display_name will be set to an emtpy string.
+        """
+        self._display_name = display_name

@@ -1,40 +1,29 @@
 """
 Repository of the Cobbler object model
-
-Copyright 2006-2009, Red Hat, Inc and Others
-Michael DeHaan <michael.dehaan AT gmail>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
-02110-1301  USA
 """
 
-import weakref
-from typing import Union, Dict, Any
+# SPDX-License-Identifier: GPL-2.0-or-later
+# SPDX-FileCopyrightText: Copyright 2006-2009, Red Hat, Inc and Others
+# SPDX-FileCopyrightText: Michael DeHaan <michael.dehaan AT gmail>
 
+import weakref
+from typing import TYPE_CHECKING, Any, Dict, cast
+
+from cobbler import serializer, validate
 from cobbler.cexceptions import CX
-from cobbler import serializer
-from cobbler import validate
+from cobbler.cobbler_collections.collection import Collection
 from cobbler.cobbler_collections.distros import Distros
-from cobbler.cobbler_collections.files import Files
 from cobbler.cobbler_collections.images import Images
-from cobbler.cobbler_collections.mgmtclasses import Mgmtclasses
-from cobbler.cobbler_collections.packages import Packages
+from cobbler.cobbler_collections.menus import Menus
 from cobbler.cobbler_collections.profiles import Profiles
 from cobbler.cobbler_collections.repos import Repos
 from cobbler.cobbler_collections.systems import Systems
-from cobbler.cobbler_collections.menus import Menus
+from cobbler.settings import Settings
+
+if TYPE_CHECKING:
+    from cobbler.api import CobblerAPI
+    from cobbler.cobbler_collections.collection import ITEM
+    from cobbler.items.abstract.base_item import BaseItem
 
 
 class CollectionManager:
@@ -46,7 +35,7 @@ class CollectionManager:
     has_loaded = False
     __shared_state: Dict[str, Any] = {}
 
-    def __init__(self, api):
+    def __init__(self, api: "CobblerAPI") -> None:
         """
         Constructor which loads all content if this action was not performed before.
         """
@@ -54,7 +43,7 @@ class CollectionManager:
         if not CollectionManager.has_loaded:
             self.__load(api)
 
-    def __load(self, api):
+    def __load(self, api: "CobblerAPI") -> None:
         """
         Load all collections from the disk into Cobbler.
 
@@ -63,17 +52,15 @@ class CollectionManager:
         CollectionManager.has_loaded = True
 
         self.api = api
+        self.__serializer = serializer.Serializer(api)
         self._distros = Distros(weakref.proxy(self))
         self._repos = Repos(weakref.proxy(self))
         self._profiles = Profiles(weakref.proxy(self))
         self._systems = Systems(weakref.proxy(self))
         self._images = Images(weakref.proxy(self))
-        self._mgmtclasses = Mgmtclasses(weakref.proxy(self))
-        self._packages = Packages(weakref.proxy(self))
-        self._files = Files(weakref.proxy(self))
         self._menus = Menus(weakref.proxy(self))
 
-    def distros(self):
+    def distros(self) -> Distros:
         """
         Return the definitive copy of the Distros collection
         """
@@ -91,7 +78,7 @@ class CollectionManager:
         """
         return self._systems
 
-    def settings(self):
+    def settings(self) -> "Settings":
         """
         Return the definitive copy of the application settings
         """
@@ -109,57 +96,34 @@ class CollectionManager:
         """
         return self._images
 
-    def mgmtclasses(self) -> Mgmtclasses:
-        """
-        Return the definitive copy of the Mgmtclasses collection
-        """
-        return self._mgmtclasses
-
-    def packages(self) -> Packages:
-        """
-        Return the definitive copy of the Packages collection
-        """
-        return self._packages
-
-    def files(self) -> Files:
-        """
-        Return the definitive copy of the Files collection
-        """
-        return self._files
-
-    def menus(self):
+    def menus(self) -> Menus:
         """
         Return the definitive copy of the Menus collection
         """
         return self._menus
 
-    def serialize(self):
+    def serialize(self) -> None:
         """
         Save all cobbler_collections to disk
         """
 
-        serializer.serialize(self._distros)
-        serializer.serialize(self._repos)
-        serializer.serialize(self._profiles)
-        serializer.serialize(self._images)
-        serializer.serialize(self._systems)
-        serializer.serialize(self._mgmtclasses)
-        serializer.serialize(self._packages)
-        serializer.serialize(self._files)
-        serializer.serialize(self._menus)
+        self.__serializer.serialize(self._distros)
+        self.__serializer.serialize(self._repos)
+        self.__serializer.serialize(self._profiles)
+        self.__serializer.serialize(self._images)
+        self.__serializer.serialize(self._systems)
+        self.__serializer.serialize(self._menus)
 
-    # pylint: disable=R0201
-    def serialize_one_item(self, item):
+    def serialize_one_item(self, item: "BaseItem") -> None:
         """
         Save a collection item to disk
 
         :param item: collection item
         """
         collection = self.get_items(item.COLLECTION_TYPE)
-        serializer.serialize_item(collection, item)
+        self.__serializer.serialize_item(collection, item)
 
-    # pylint: disable=R0201
-    def serialize_item(self, collection, item):
+    def serialize_item(self, collection: "Collection[ITEM]", item: "ITEM") -> None:
         """
         Save a collection item to disk
 
@@ -169,89 +133,76 @@ class CollectionManager:
         :param collection: Collection
         :param item: collection item
         """
-        serializer.serialize_item(collection, item)
+        self.__serializer.serialize_item(collection, item)
 
-    # pylint: disable=R0201
-    def serialize_delete_one_item(self, item):
+    def serialize_delete_one_item(self, item: "BaseItem") -> None:
         """
         Save a collection item to disk
 
         :param item: collection item
         """
         collection = self.get_items(item.COLLECTION_TYPE)
-        serializer.serialize_delete(collection, item)
+        self.__serializer.serialize_delete(collection, item)
 
-    # pylint: disable=R0201
-    def serialize_delete(self, collection, item):
+    def serialize_delete(self, collection: "Collection[ITEM]", item: "ITEM") -> None:
         """
         Delete a collection item from disk
 
         :param collection: collection
         :param item: collection item
         """
-        serializer.serialize_delete(collection, item)
+        self.__serializer.serialize_delete(collection, item)
 
-    def deserialize(self):
+    def deserialize(self) -> None:
         """
         Load all cobbler_collections from disk
 
         :raises CX: if there is an error in deserialization
         """
-        for collection in (
-            self._menus,
-            self._distros,
-            self._repos,
-            self._profiles,
-            self._images,
-            self._systems,
-            self._mgmtclasses,
-            self._packages,
-            self._files,
+        for args in (
+            (self._menus, True),
+            (self._distros, False),
+            (self._repos, False),
+            (self._profiles, True),
+            (self._images, False),
+            (self._systems, False),
         ):
             try:
-                serializer.deserialize(collection)
-            except Exception as e:
+                cast_collection = cast(Collection["BaseItem"], args[0])
+                self.__serializer.deserialize(
+                    collection=cast_collection, topological=args[1]
+                )
+            except Exception as error:
                 raise CX(
-                    "serializer: error loading collection %s: %s. Check /etc/cobbler/modules.conf"
-                    % (collection.collection_type(), e)
-                ) from e
+                    f"serializer: error loading collection {args[0].collection_type()}: {error}."
+                    f"Check your settings!"
+                ) from error
 
-    def get_items(
-        self, collection_type: str
-    ) -> Union[
-        Distros, Profiles, Systems, Repos, Images, Mgmtclasses, Packages, Files, Menus
-    ]:
+    def deserialize_one_item(self, obj: "BaseItem") -> Dict[str, Any]:
+        """
+        Load a collection item from disk
+
+        :param obj: collection item
+        """
+        collection_type = self.get_items(obj.COLLECTION_TYPE).collection_types()
+        return self.__serializer.deserialize_item(collection_type, obj.name)
+
+    def get_items(self, collection_type: str) -> "Collection[BaseItem]":
         """
         Get a full collection of a single type.
 
-        Valid Values vor ``collection_type`` are: "distro", "profile", "repo", "image", "mgmtclass", "package", "file"
-        and "settings".
+        Valid Values vor ``collection_type`` are: "distro", "profile", "repo", "image", "menu" and "settings".
 
         :param collection_type: The type of collection to return.
         :return: The collection if ``collection_type`` is valid.
         :raises CX: If the ``collection_type`` is invalid.
         """
-        result: Union[
-            Distros,
-            Profiles,
-            Systems,
-            Repos,
-            Images,
-            Mgmtclasses,
-            Packages,
-            Files,
-            Menus,
-        ]
         if validate.validate_obj_type(collection_type) and hasattr(
             self, f"_{collection_type}s"
         ):
             result = getattr(self, f"_{collection_type}s")
-        elif collection_type == "mgmtclass":
-            result = self._mgmtclasses
-        elif collection_type == "settings":
-            result = self.api.settings()
         else:
             raise CX(
-                'internal error, collection name "%s" not supported' % collection_type
+                f'internal error, collection name "{collection_type}" not supported'
             )
         return result

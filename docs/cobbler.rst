@@ -34,7 +34,7 @@ If you want to remove a specific object, use the remove command with the name th
 
 .. code-block:: shell
 
-    cobbler distro|profile|system|repo|image|mgmtclass|package|file|menu remove --name=string
+    cobbler distro|profile|system|repo|image|menu remove --name=string
 
 Editing
 =======
@@ -45,7 +45,7 @@ object, preserving settings not mentioned.
 
 .. code-block:: shell
 
-    cobbler distro|profile|system|repo|image|mgmtclass|package|file|menu edit --name=string [parameterlist]
+    cobbler distro|profile|system|repo|image|menu edit --name=string [parameterlist]
 
 Copying
 =======
@@ -54,7 +54,7 @@ Objects can also be copied:
 
 .. code-block:: shell
 
-    cobbler distro|profile|system|repo|image|mgmtclass|package|file|menu copy --name=oldname --newname=newname
+    cobbler distro|profile|system|repo|image|menu copy --name=oldname --newname=newname
 
 Renaming
 ========
@@ -63,7 +63,7 @@ Objects can also be renamed, as long as other objects don't reference them.
 
 .. code-block:: shell
 
-    cobbler distro|profile|system|repo|image|mgmtclass|package|file|menu rename --name=oldname --newname=newname
+    cobbler distro|profile|system|repo|image|menu rename --name=oldname --newname=newname
 
 CLI-Commands
 ############
@@ -74,7 +74,7 @@ Long Usage:
 
 .. code-block:: shell
 
-    cobbler <distro|profile|system|repo|image|mgmtclass|package|file|menu> ... [add|edit|copy|get-autoinstall*|list|remove|rename|report] [options|--help]
+    cobbler <distro|profile|system|repo|image|menu> ... [add|edit|copy|get-autoinstall*|list|remove|rename|report] [options|--help]
     cobbler <aclsetup|buildiso|import|list|mkloaders|replicate|report|reposync|sync|validate-autoinstalls|version|signature|hardlink> [options|--help]
 
 Cobbler distro
@@ -169,7 +169,7 @@ If you want to be explicit with distribution definition, however, here's how it 
 |                 | objects (distros, profiles, systems, and repos) can take a --owners parameter to specify what       |
 |                 | Cobbler users can edit particular objects.This only applies to the Cobbler WebUI and XML-RPC        |
 |                 | interface, not the "cobbler" command line tool run from the shell. Furthermore, this is only        |
-|                 | respected by the ``authz_ownership`` module which must be enabled in ``/etc/cobbler/modules.conf``. |
+|                 | respected by the ``authorization.ownership`` module which must be enabled in the settings.          |
 |                 | The value for ``--owners`` is a space separated list of users and groups as specified in            |
 |                 | ``/etc/cobbler/users.conf``. For more information see the users.conf file as well as the Cobbler    |
 |                 | Wiki. In the default Cobbler configuration, this value is completely ignored, as is ``users.conf``. |
@@ -262,8 +262,8 @@ listed below:
 |                     | objects (distros, profiles, systems, and repos) can take a --owners parameter to specify what  |
 |                     | Cobbler users can edit particular objects.This only applies to the Cobbler WebUI and XML-RPC   |
 |                     | interface, not the "cobbler" command line tool run from the shell. Furthermore, this is only   |
-|                     | respected by the ``authz_ownership`` module which must be enabled in                           |
-|                     | ``/etc/cobbler/modules.conf``. The value for ``--owners`` is a space separated list of users   |
+|                     | respected by the ``authorization.ownership`` module which must be enabled in                   |
+|                     | the settings. The value for ``--owners`` is a space separated list of users                    |
 |                     | and groups as specified in ``/etc/cobbler/users.conf``.                                        |
 |                     | For more information see the users.conf file as well as the Cobbler                            |
 |                     | Wiki. In the default Cobbler configuration, this value is completely ignored, as is            |
@@ -314,7 +314,7 @@ listed below:
 +---------------------+------------------------------------------------------------------------------------------------+
 | virt-bridge         | (Virt-only) This specifies the default bridge to use for all systems defined under this        |
 |                     | profile. If not specified, it will assume the default value in the Cobbler settings file, which|
-|                     | as shipped in the RPM is ``xenbr0``. If using KVM, this is most likely not correct. You may    |
+|                     | as shipped in the RPM is ``virbr0``. If not using NAT, this is most likely not correct. You may|
 |                     | want to override this setting in the system object. Bridge settings are important as they      |
 |                     | define how outside networking will reach the guest. For more information on bridge setup, see  |
 |                     | the Cobbler Wiki, where there is a section describing Koan usage.                              |
@@ -342,11 +342,11 @@ listed below:
 |                     | as an integer without units.                                                                   |
 +---------------------+------------------------------------------------------------------------------------------------+
 | virt-type           | (Virt-only) Koan can install images using either Xen paravirt (``xenpv``) or QEMU/KVM          |
-|                     | (``qemu``). Choose one or the other strings to specify, or values will default to attempting to|
-|                     | find a compatible installation type on the client system("auto"). See the "Koan" manpage for   |
-|                     | more documentation. The default ``--virt-type`` can be configured in the Cobbler settings file |
-|                     | such that this parameter does not have to be provided. Other virtualization types are          |
-|                     | supported, for information on those options (such as VMware), see the Cobbler Wiki.            |
+|                     | (``qemu``/``kvm``). Choose one or the other strings to specify, or values will default to      |
+|                     | attempting to find a compatible installation type on the client system("auto"). See the "Koan" |
+|                     | manpage for more documentation. The default ``--virt-type`` can be configured in the Cobbler   |
+|                     | settings file such that this parameter does not have to be provided. Other virtualization types|
+|                     | are supported, for information on those options (such as VMware), see the Cobbler Wiki.        |
 +---------------------+------------------------------------------------------------------------------------------------+
 
 Cobbler system
@@ -478,36 +478,39 @@ Adds a Cobbler System to the configuration. Arguments are specified as per "prof
 |                     |                                                                                                |
 |                     | Example:                                                                                       |
 |                     |                                                                                                |
-|                     | cobbler system edit --name=foo \                                                               |
-|                     |                     --interface=eth0 \                                                         |
-|                     |                     --mac=AA:BB:CC:DD:EE:00 \                                                  |
-|                     |                     --interface-type=bond_slave \                                              |
-|                     |                     --interface-master=bond0                                                   |
+|                     | .. code-block:: shell-session                                                                  |
 |                     |                                                                                                |
-|                     | cobbler system edit --name=foo \                                                               |
-|                     |                     --interface=eth1 \                                                         |
-|                     |                     --mac=AA:BB:CC:DD:EE:01 \                                                  |
-|                     |                     --interface-type=bond_slave \                                              |
-|                     |                     --interface-master=bond0                                                   |
-|                     |                                                                                                |
-|                     | cobbler system edit --name=foo \                                                               |
-|                     |                     --interface=bond0 \                                                        |
-|                     |                     --interface-type=bond \                                                    |
-|                     |                     --bonding-opts="mode=active-backup miimon=100" \                           |
-|                     |                     --ip-address=192.168.0.63 \                                                |
-|                     |                     --netmask=255.255.255.0 \                                                  |
-|                     |                     --gateway=192.168.0.1 \                                                    |
-|                     |                     --static=1                                                                 |
+|                     |     cobbler system edit --name=foo \                                                           |
+|                     |                         --interface=eth0 \                                                     |
+|                     |                         --mac=AA:BB:CC:DD:EE:00 \                                              |
+|                     |                         --interface-type=bond_slave \                                          |
+|                     |                         --interface-master=bond0                                               |
+|                     |     cobbler system edit --name=foo \                                                           |
+|                     |                         --interface=eth1 \                                                     |
+|                     |                         --mac=AA:BB:CC:DD:EE:01 \                                              |
+|                     |                         --interface-type=bond_slave \                                          |
+|                     |                         --interface-master=bond0                                               |
+|                     |     cobbler system edit --name=foo \                                                           |
+|                     |                         --interface=bond0 \                                                    |
+|                     |                         --interface-type=bond \                                                |
+|                     |                         --bonding-opts="mode=active-backup miimon=100" \                       |
+|                     |                         --ip-address=192.168.0.63 \                                            |
+|                     |                         --netmask=255.255.255.0 \                                              |
+|                     |                         --gateway=192.168.0.1 \                                                |
+|                     |                         --static=1                                                             |
 |                     |                                                                                                |
 |                     | More information about networking setup is available at                                        |
-|                     | https://github.com/cobbler/cobbler/wiki/Advanced-networking                                    |
+|                     | :doc:`Advanced Networking </user-guide/advanced-networking>`                                   |
 |                     |                                                                                                |
 |                     | To review what networking configuration you have for any object, run "cobbler system report"   |
 |                     | at any time:                                                                                   |
 |                     |                                                                                                |
 |                     | Example:                                                                                       |
 |                     |                                                                                                |
-|                     | cobbler system report --name=foo                                                               |
+|                     | .. code-block:: shell-session                                                                  |
+|                     |                                                                                                |
+|                     |     cobbler system report --name=foo                                                           |
+|                     |                                                                                                |
 +---------------------+------------------------------------------------------------------------------------------------+
 | if-gateway          | If you are using static IP configurations and have multiple interfaces, use this to define     |
 |                     | different gateway for each interface.                                                          |
@@ -601,8 +604,8 @@ Adds a Cobbler System to the configuration. Arguments are specified as per "prof
 |                     | objects (distros, profiles, systems, and repos) can take a --owners parameter to specify what  |
 |                     | Cobbler users can edit particular objects.This only applies to the Cobbler WebUI and XML-RPC   |
 |                     | interface, not the "cobbler" command line tool run from the shell. Furthermore, this is only   |
-|                     | respected by the ``authz_ownership`` module which must be enabled in                           |
-|                     | ``/etc/cobbler/modules.conf``. The value for ``--owners`` is a space separated list of users   |
+|                     | respected by the ``authorization.ownership`` module which must be enabled in                   |
+|                     | the settings. The value for ``--owners`` is a space separated list of users                    |
 |                     | and groups as specified in ``/etc/cobbler/users.conf``.                                        |
 |                     | For more information see the users.conf file as well as the Cobbler                            |
 |                     | Wiki. In the default Cobbler configuration, this value is completely ignored, as is            |
@@ -640,7 +643,7 @@ Adds a Cobbler System to the configuration. Arguments are specified as per "prof
 +---------------------+------------------------------------------------------------------------------------------------+
 | virt-bridge         | (Virt-only) This specifies the default bridge to use for all systems defined under this        |
 |                     | profile. If not specified, it will assume the default value in the Cobbler settings file, which|
-|                     | as shipped in the RPM is ``xenbr0``. If using KVM, this is most likely not correct. You may    |
+|                     | as shipped in the RPM is ``virbr0``. If no using NAT, this is most likely not correct. You may |
 |                     | want to override this setting in the system object. Bridge settings are important as they      |
 |                     | define how outside networking will reach the guest. For more information on bridge setup, see  |
 |                     | the Cobbler Wiki, where there is a section describing Koan usage.                              |
@@ -668,11 +671,11 @@ Adds a Cobbler System to the configuration. Arguments are specified as per "prof
 |                     | as an integer without units.                                                                   |
 +---------------------+------------------------------------------------------------------------------------------------+
 | virt-type           | (Virt-only) Koan can install images using either Xen paravirt (``xenpv``) or QEMU/KVM          |
-|                     | (``qemu``). Choose one or the other strings to specify, or values will default to attempting to|
-|                     | find a compatible installation type on the client system("auto"). See the "Koan" manpage for   |
-|                     | more documentation. The default ``--virt-type`` can be configured in the Cobbler settings file |
-|                     | such that this parameter does not have to be provided. Other virtualization types are          |
-|                     | supported, for information on those options (such as VMware), see the Cobbler Wiki.            |
+|                     | (``qemu``/``kvm``). Choose one or the other strings to specify, or values will default to      |
+|                     | attempting to find a compatible installation type on the client system("auto"). See the "Koan" |
+|                     | manpage for more documentation. The default ``--virt-type`` can be configured in the Cobbler   |
+|                     | settings file such that this parameter does not have to be provided. Other virtualization types|
+|                     | are supported, for information on those options (such as VMware), see the Cobbler Wiki.        |
 +---------------------+------------------------------------------------------------------------------------------------+
 
 Cobbler repo
@@ -751,8 +754,8 @@ probably be overkill, though it can be very useful for larger setups (labs, data
 |                  | objects (distros, profiles, systems, and repos) can take a --owners parameter to specify what     |
 |                  | Cobbler users can edit particular objects.This only applies to the Cobbler WebUI and XML-RPC      |
 |                  | interface, not the "cobbler" command line tool run from the shell. Furthermore, this is only      |
-|                  | respected by the ``authz_ownership`` module which must be enabled in                              |
-|                  | ``/etc/cobbler/modules.conf``. The value for ``--owners`` is a space separated list of users      |
+|                  | respected by the ``authorization.ownership`` module which must be enabled in                      |
+|                  | the settings. The value for ``--owners`` is a space separated list of users                       |
 |                  | and groups as specified in ``/etc/cobbler/users.conf``.                                           |
 |                  | For more information see the users.conf file as well as the Cobbler                               |
 |                  | Wiki. In the default Cobbler configuration, this value is completely ignored, as is               |
@@ -790,113 +793,78 @@ Add enabled yum repositories from ``dnf repolist --enabled`` list. The repositor
 Cobbler image
 =============
 
+The primary and recommended use of Cobbler is to deploy systems by building them like from the OS manufacturer's
+distribution, e.g Redhat kickstart. This method is generally easier to work with and provides an infrastructure which is
+not only more sustainable but also much more flexible across varieties of hardware.
+
+But Cobbler can also help with image-based booting, physically and virtually. Some manual use of other commands beyond what
+is typically required of Cobbler may be needed to prepare images for use with this feature and the usage of these
+commands varies substantially depending on the type of image.
+
+For now we just have 1 example of using the "memdisk" image type:
+
 Example:
 
 .. code-block:: shell
 
     $ cobbler image
 
-Cobbler mgmtclass
-=================
+memdisk - Oracle / Sun Maintenance CD
+-------------------------------------
 
-Management classes allows Cobbler to function as an configuration management system. Cobbler currently supports the
-following resource types:
+The 'memdisk' image type can be used to PXE boot Oracle / Sun maintenance CDs.
+`Their manual <https://docs.oracle.com/cd/E19121-01/sf.x2250/820-4593-12/AppB.html#50540564_72480>`_ gives details on
+how to copy the image from a CD to a PXE server. The procedure is even easier with Cobbler since the system takes care
+of most of it for you.
 
-1. Packages
-2. Files
-
-Resources are executed in the order listed above.
-
-.. code-block:: shell
-
-    $ cobbler mgmtclass add --name=string --comment=string [--packages=list] [--files=list]
-
-+------------+-----------------------------------------------------------------------------------------------------------+
-| Name       | Description                                                                                               |
-+============+===========================================================================================================+
-| class-name | Class Name (Actual Class Name (leave blank to use the name field)).                                       |
-+------------+-----------------------------------------------------------------------------------------------------------+
-| comment    | A comment that describes the functions of the management class.                                           |
-+------------+-----------------------------------------------------------------------------------------------------------+
-| files      | Specifies a list of file resources required by the management class.                                      |
-+------------+-----------------------------------------------------------------------------------------------------------+
-| **name**   | The name of the mgmtclass. Use this name when adding a management class to a system, profile, or distro.  |
-|            | To add a mgmtclass to an existing system use something like                                               |
-|            | (``cobbler system edit --name="madhatter" --mgmt-classes="http mysql"``).                                 |
-+------------+-----------------------------------------------------------------------------------------------------------+
-| packages   | Specifies a list of package resources required by the management class.                                   |
-+------------+-----------------------------------------------------------------------------------------------------------+
-
-
-Cobbler package
-===============
-
-Package resources are managed using ``cobbler package add``
-
-Actions:
-
-+-----------+--------------------------------+
-| Name      | Description                    |
-+===========+================================+
-| install   | Install the package. [Default] |
-+-----------+--------------------------------+
-| uninstall | Uninstall the package.         |
-+-----------+--------------------------------+
-
-Attributes:
-
-+-----------+--------------------------------------------------------+
-| Name      | Description                                            |
-+===========+========================================================+
-| installer | Which package manager to use, valid options [rpm|yum]. |
-+-----------+--------------------------------------------------------+
-| **name**  | Cobbler object name.                                   |
-+-----------+--------------------------------------------------------+
-| version   | Which version of the package to install.               |
-+-----------+--------------------------------------------------------+
-
-Example:
+Take your ISO for the boot CD and mount it as a loopback mount somewhere on your Cobbler server then copy the
+``boot.img`` file into your tftpboot directory. Then add an image of type ``memdisk`` which uses it. Right now the
+following shell command will fail due to a known bug but the web interface can be used instead to add the image.
 
 .. code-block:: shell
 
-    $ cobbler package add --name=string --comment=string [--action=install|uninstall] --installer=string [--version=string]
+   > cobbler image add --name=MyName --image-type=memdisk --file=/tftpboot/oracle/SF2250/boot.img
+   > usage: cobbler [options]
+   >
+   > cobbler: error: option --image-type: invalid choice: 'memdisk' (choose from 'iso', 'direct', 'virt-image')
 
-Cobbler file
-============
 
-Actions:
+Now just boot your machine from the network and select the image "MyName".
 
-+--------+----------------------------+
-| Name   | Description                |
-+========+============================+
-| create | Create the file. [Default] |
-+--------+----------------------------+
-| remove | Remove the file.           |
-+--------+----------------------------+
+Memtest
+-------
 
-Attributes:
+If installed Cobbler will put an entry into all of your PXE menus allowing you to run memtest on physical systems
+without making changes in Cobbler. This can be handy for some simple diagnostics.
 
-+----------+---------------------------------+
-| Name     | Description                     |
-+==========+=================================+
-| group    | The group owner of the file.    |
-+----------+---------------------------------+
-| mode     | Permission mode (as in chmod).  |
-+----------+---------------------------------+
-| **name** | Name of the cobbler file object |
-+----------+---------------------------------+
-| **path** | The path for the file.          |
-+----------+---------------------------------+
-| template | The template for the file.      |
-+----------+---------------------------------+
-| user     | The user for the file.          |
-+----------+---------------------------------+
-
-Example:
+Steps to get memtest to show up in your PXE menus:
 
 .. code-block:: shell
 
-    $ cobbler file add --name=string --comment=string [--action=string] --mode=string --group=string --owner=string --path=string [--template=string]
+   $ zypper/dnf install memtest86+
+   $ cobbler image add --name=memtest86+ --file=/path/to/memtest86+ --image-type=direct
+   $ cobbler sync
+
+Targeted Memtesting
+-------------------
+
+However if you already have a Cobbler system record for the system you won't get the menu. To solve this:
+
+.. code-block:: shell
+
+   cobbler image add --name=foo --file=/path/to/memtest86 --image-type=direct
+   cobbler system edit --name=bar --mac=AA:BB:CC:DD:EE:FF --image=foo --netboot-enabled=1
+
+The system will boot to memtest until you put it back to its original profile.
+
+.. warning:: When restoring the system back from memtest, make sure you turn its netboot flag **off** if you have it
+             set to PXE first in the BIOS order unless you want to reinstall the system!
+
+.. code-block:: shell
+
+   $ cobbler system edit --name=bar --profile=old_profile_name --netboot-enabled=0
+
+If you do want to reinstall it after running memtest, use ``--netboot-enabled=true``.
 
 Cobbler menu
 ============
@@ -936,6 +904,8 @@ Cobbler buildiso
 
 This command may not behave like you expect it without installing additional dependencies and configuration. The in
 depth explanation can be found at :ref:`building-isos`.
+
+.. note:: Systems refers to systems that are profile based. Systems with a parent image based systems will be skipped.
 
 +--------------+-------------------------------------------------------------------------------------------------------+
 | Name         | Description                                                                                           |
@@ -987,7 +957,7 @@ Cobbler list
 ============
 
 This list all the names grouped by type. Identically to ``cobbler report`` there are subcommands for most of the other
-Cobbler commands. (Currently: distro, profile, system, repo, image, mgmtclass, package, file)
+Cobbler commands. (Currently: distro, profile, system, repo, image)
 
 .. code-block:: shell
 
@@ -997,7 +967,7 @@ Cobbler replicate
 =================
 
 Cobbler can replicate configurations from a master Cobbler server. Each Cobbler server is still expected to have a
-locally relevant ``/etc/cobbler/cobbler.conf`` and ``modules.conf``, as these files are not synced.
+locally relevant ``/etc/cobbler/settings.yaml``, as this file is not synced.
 
 This feature is intended for load-balancing, disaster-recovery, backup, or multiple geography support.
 
@@ -1029,15 +999,12 @@ Cobbler report
 =================
 
 This lists all configuration which Cobbler can obtain from the saved data. There are also ``report`` subcommands for
-most of the other Cobbler commands (currently: distro, profile, system, repo, image, mgmtclass, package, file, menu).
+most of the other Cobbler commands (currently: distro, profile, system, repo, image, menu).
 
 .. code-block:: shell
 
-    $ cobbler report --name=[object-name]
+    $ cobbler report
 
---name=[object-name]
-
-Optional parameter which filters for object with the given name.
 
 .. _cobbler-cli-reposync:
 

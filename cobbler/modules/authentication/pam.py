@@ -4,12 +4,12 @@ Choice of authentication module is in /etc/cobbler/modules.conf
 
 
 PAM python code based on the pam_python code created by Chris AtLee:
-http://atlee.ca/software/pam/
+https://atlee.ca/software/pam/
 
 #-----------------------------------------------
 pam_python (c) 2007 Chris AtLee <chris@atlee.ca>
 Licensed under the MIT license:
-http://www.opensource.org/licenses/mit-license.php
+https://www.opensource.org/licenses/mit-license.php
 
 PAM module for python
 
@@ -18,15 +18,33 @@ a user against the Pluggable Authentication Modules (PAM) on the system.
 
 Implemented using ctypes, so no compilation is necessary.
 """
+
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: Copyright 2007-2009, Red Hat, Inc and Others
 # SPDX-FileCopyrightText: Michael DeHaan <michael.dehaan AT gmail>
 # FIXME: Move to the dedicated library python-pam
 
 
-from ctypes import CDLL, POINTER, Structure, CFUNCTYPE, cast, pointer, sizeof
-from ctypes import c_void_p, c_uint, c_char_p, c_char, c_int
+from ctypes import (
+    CDLL,
+    CFUNCTYPE,
+    POINTER,
+    Structure,
+    c_char,
+    c_char_p,
+    c_int,
+    c_uint,
+    c_void_p,
+    cast,
+    pointer,
+    sizeof,
+)
 from ctypes.util import find_library
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from cobbler.api import CobblerAPI
+
 
 LIBPAM = CDLL(find_library("pam"))
 LIBC = CDLL(find_library("c"))
@@ -36,7 +54,7 @@ CALLOC.restype = c_void_p
 CALLOC.argtypes = [c_uint, c_uint]
 
 STRDUP = LIBC.strdup
-STRDUP.argstypes = [c_char_p]
+STRDUP.argstypes = [c_char_p]  # type: ignore
 STRDUP.restype = POINTER(c_char)  # NOT c_char_p !!!!
 
 # Various constants
@@ -73,7 +91,7 @@ class PamMessage(Structure):
     _fields_ = [("msg_style", c_int), ("msg", c_char_p)]
 
     def __repr__(self):
-        return "<PamMessage %i '%s'>" % (self.msg_style, self.msg)
+        return f"<PamMessage {self.msg_style:d} '{self.msg}'>"
 
 
 class PamResponse(Structure):
@@ -84,7 +102,7 @@ class PamResponse(Structure):
     _fields_ = [("resp", c_char_p), ("resp_retcode", c_int)]
 
     def __repr__(self):
-        return "<PamResponse %i '%s'>" % (self.resp_retcode, self.resp)
+        return f"<PamResponse {self.resp_retcode:d} '{self.resp}'>"
 
 
 CONV_FUNC = CFUNCTYPE(
@@ -113,37 +131,37 @@ PAM_ACCT_MGMT.restype = c_int
 PAM_ACCT_MGMT.argtypes = [PamHandle, c_int]
 
 
-def authenticate(api_handle, username: str, password: str) -> bool:
+def authenticate(api_handle: "CobblerAPI", username: str, password: str) -> bool:
     """
     Validate PAM authentication, returning whether the authentication was successful or not.
 
-    :param api_handle: Used for resolving the the pam service name and getting the Logger.
+    :param api_handle: Used for resolving the pam service name and getting the Logger.
     :param username: The username to log in with.
     :param password: The password to log in with.
     :returns: True if the given username and password authenticate for the given service. Otherwise False
     """
 
     @CONV_FUNC
-    def my_conv(n_messages, messages, p_response, app_data):
+    def my_conv(n_messages, messages, p_response, app_data):  # type: ignore
         """
         Simple conversation function that responds to any prompt where the echo is off with the supplied password
         """
         # Create an array of n_messages response objects
         addr = CALLOC(n_messages, sizeof(PamResponse))
         p_response[0] = cast(addr, POINTER(PamResponse))
-        for i in range(n_messages):
-            if messages[i].contents.msg_style == PAM_PROMPT_ECHO_OFF:
+        for i in range(n_messages):  # type: ignore
+            if messages[i].contents.msg_style == PAM_PROMPT_ECHO_OFF:  # type: ignore
                 pw_copy = STRDUP(password.encode())
-                p_response.contents[i].resp = cast(pw_copy, c_char_p)
-                p_response.contents[i].resp_retcode = 0
+                p_response.contents[i].resp = cast(pw_copy, c_char_p)  # type: ignore
+                p_response.contents[i].resp_retcode = 0  # type: ignore
         return 0
 
     try:
         service = api_handle.settings().authn_pam_service
-    except:
+    except Exception:
         service = "login"
 
-    api_handle.logger.debug("authn_pam: PAM service is %s" % service)
+    api_handle.logger.debug(f"authn_pam: PAM service is {service}")
 
     handle = PamHandle()
     conv = PamConv(my_conv, 0)

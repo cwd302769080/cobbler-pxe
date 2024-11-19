@@ -1,33 +1,25 @@
 """
 This is some of the code behind 'cobbler sync'.
-
-Copyright 2006-2009, Red Hat, Inc and Others
-Michael DeHaan <michael.dehaan AT gmail>
-John Eckersberg <jeckersb@redhat.com>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
-02110-1301  USA
 """
+
+# SPDX-License-Identifier: GPL-2.0-or-later
+# SPDX-FileCopyrightText: Copyright 2006-2009, Red Hat, Inc and Others
+# SPDX-FileCopyrightText: Michael DeHaan <michael.dehaan AT gmail>
+# SPDX-FileCopyrightText: John Eckersberg <jeckersb@redhat.com>
 
 import re
 import socket
 import time
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Union
 
 from cobbler import utils
 from cobbler.cexceptions import CX
-from cobbler.manager import ManagerModule
+from cobbler.modules.managers import DnsManagerModule
+from cobbler.utils import process_management
+
+if TYPE_CHECKING:
+    from cobbler.api import CobblerAPI
+
 
 MANAGER = None
 
@@ -39,7 +31,25 @@ def register() -> str:
     return "manage"
 
 
-class _BindManager(ManagerModule):
+class MetadataZoneHelper:
+    """
+    Helper class to hold data for template rendering of named config files.
+    """
+
+    def __init__(
+        self,
+        forward_zones: List[str],
+        reverse_zones: List[Tuple[str, str]],
+        zone_include: str,
+    ):
+        self.forward_zones: List[str] = forward_zones
+        self.reverse_zones: List[Tuple[str, str]] = reverse_zones
+        self.zone_include = zone_include
+        self.bind_master = ""
+        self.bind_zonefiles = ""
+
+
+class _BindManager(DnsManagerModule):
     @staticmethod
     def what() -> str:
         """
@@ -49,64 +59,64 @@ class _BindManager(ManagerModule):
         """
         return "bind"
 
-    def __init__(self, api):
+    def __init__(self, api: "CobblerAPI"):
         super().__init__(api)
 
         self.settings_file = utils.namedconf_location()
         self.zonefile_base = self.settings.bind_zonefile_path + "/"
 
-    def regen_hosts(self):
+    def regen_hosts(self) -> None:
         """
         Not used.
         """
-        pass
 
-    def __expand_IPv6(self, address):
+    @staticmethod
+    def __expand_ipv6(address: str) -> str:
         """
         Expands an IPv6 address to long format i.e. ``xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx``
 
         This function was created by Chris Miller, approved for GLP use, taken verbatim from:
-        http://forrst.com/posts/Python_Expand_Abbreviated_IPv6_Addresses-1kQ
+        https://forrst.com/posts/Python_Expand_Abbreviated_IPv6_Addresses-1kQ
 
         :param address: Shortened IPv6 address.
         :return: The full IPv6 address.
         """
-        fullAddress = ""  # All groups
-        expandedAddress = ""  # Each group padded with leading zeroes
-        validGroupCount = 8
-        validGroupSize = 4
+        full_address = ""  # All groups
+        expanded_address = ""  # Each group padded with leading zeroes
+        valid_group_count = 8
+        valid_group_size = 4
         if "::" not in address:  # All groups are already present
-            fullAddress = address
+            full_address = address
         else:  # Consecutive groups of zeroes have been collapsed with "::"
             sides = address.split("::")
-            groupsPresent = 0
+            groups_present = 0
             for side in sides:
                 if len(side) > 0:
-                    groupsPresent += len(side.split(":"))
+                    groups_present += len(side.split(":"))
             if len(sides[0]) > 0:
-                fullAddress += sides[0] + ":"
-            for i in range(0, validGroupCount - groupsPresent):
-                fullAddress += "0000:"
+                full_address += sides[0] + ":"
+            for _ in range(0, valid_group_count - groups_present):
+                full_address += "0000:"
             if len(sides[1]) > 0:
-                fullAddress += sides[1]
-            if fullAddress[-1] == ":":
-                fullAddress = fullAddress[:-1]
-        groups = fullAddress.split(":")
+                full_address += sides[1]
+            if full_address[-1] == ":":
+                full_address = full_address[:-1]
+        groups = full_address.split(":")
         for group in groups:
-            while len(group) < validGroupSize:
+            while len(group) < valid_group_size:
                 group = "0" + group
-            expandedAddress += group + ":"
-        if expandedAddress[-1] == ":":
-            expandedAddress = expandedAddress[:-1]
-        return expandedAddress
+            expanded_address += group + ":"
+        if expanded_address[-1] == ":":
+            expanded_address = expanded_address[:-1]
+        return expanded_address
 
-    def __forward_zones(self):
+    def __forward_zones(self) -> Dict[str, Dict[str, List[str]]]:
         """
         Returns a map of zones and the records that belong in them
         """
-        zones = {}
+        zones: Dict[str, Dict[str, List[str]]] = {}
         forward_zones = self.settings.manage_forward_zones
-        if not isinstance(forward_zones, list):
+        if not isinstance(forward_zones, list):  # type: ignore
             # Gracefully handle when user inputs only a single zone as a string instead of a list with only a single
             # item
             forward_zones = [forward_zones]
@@ -115,11 +125,11 @@ class _BindManager(ManagerModule):
             zones[zone] = {}
 
         for system in self.systems:
-            for (name, interface) in system.interfaces.items():
-                host = interface.dns_name
-                ip = interface.ip_address
-                ipv6 = interface.ipv6_address
-                ipv6_sec_addrs = interface.ipv6_secondaries
+            for _, interface in system.interfaces.items():
+                host: str = interface.dns_name
+                ipv4: str = interface.ip_address
+                ipv6: str = interface.ipv6_address
+                ipv6_sec_addrs: List[str] = interface.ipv6_secondaries
                 if not system.is_management_supported(cidr_ok=False):
                     continue
                 if not host:
@@ -134,8 +144,8 @@ class _BindManager(ManagerModule):
                 # - b.c.d.e
                 # then a.b.c.d.e should go in b.c.d.e
                 best_match = ""
-                for zone in zones.keys():
-                    if re.search(r"\.%s$" % zone, host) and len(zone) > len(best_match):
+                for zone in zones:
+                    if re.search(rf"\.{zone}$", host) and len(zone) > len(best_match):
                         best_match = zone
 
                 # no match
@@ -143,7 +153,7 @@ class _BindManager(ManagerModule):
                     continue
 
                 # strip the zone off the dns_name
-                host = re.sub(r"\.%s$" % best_match, "", host)
+                host = re.sub(rf"\.{best_match}$", "", host)
 
                 # if we are to manage ipmi hosts, add that too
                 if self.settings.bind_manage_ipmi:
@@ -160,8 +170,7 @@ class _BindManager(ManagerModule):
                         # TODO: Perhpas the suffix can be configurable through settings?
                         if power_address_is_ip:
                             ipmi_host = host + "-ipmi"
-                            ipmi_ips = []
-                            ipmi_ips.append(system.power_address)
+                            ipmi_ips: List[str] = [system.power_address]
                             try:
                                 zones[best_match][ipmi_host] = (
                                     ipmi_ips + zones[best_match][ipmi_host]
@@ -170,9 +179,9 @@ class _BindManager(ManagerModule):
                                 zones[best_match][ipmi_host] = ipmi_ips
 
                 # Create a list of IP addresses for this host
-                ips = []
-                if ip:
-                    ips.append(ip)
+                ips: List[str] = []
+                if ipv4:
+                    ips.append(ipv4)
 
                 if ipv6:
                     ips.append(ipv6)
@@ -188,15 +197,15 @@ class _BindManager(ManagerModule):
 
         return zones
 
-    def __reverse_zones(self):
+    def __reverse_zones(self) -> Dict[Any, Any]:
         """
         Returns a map of zones and the records that belong in them
 
         :return: A dict with all zones.
         """
-        zones = {}
+        zones: Dict[str, Dict[str, Union[str, List[str]]]] = {}
         reverse_zones = self.settings.manage_reverse_zones
-        if not isinstance(reverse_zones, list):
+        if not isinstance(reverse_zones, list):  # type: ignore
             # Gracefully handle when user inputs only a single zone as a string instead of a list with only a single
             # item
             reverse_zones = [reverse_zones]
@@ -204,30 +213,30 @@ class _BindManager(ManagerModule):
         for zone in reverse_zones:
             # expand and IPv6 zones
             if ":" in zone:
-                zone = (self.__expand_IPv6(zone + "::1"))[:19]
+                zone = (self.__expand_ipv6(zone + "::1"))[:19]
             zones[zone] = {}
 
         for system in self.systems:
-            for (name, interface) in system.interfaces.items():
+            for _, interface in system.interfaces.items():
                 host = interface.dns_name
-                ip = interface.ip_address
+                ip_address = interface.ip_address
                 ipv6 = interface.ipv6_address
                 ipv6_sec_addrs = interface.ipv6_secondaries
                 if not system.is_management_supported(cidr_ok=False):
                     continue
-                if not host or ((not ip) and (not ipv6)):
+                if not host or ((not ip_address) and (not ipv6)):
                     # gotta have some dns_name and ip or else!
                     continue
 
-                if ip:
+                if ip_address:
                     # Match the longest zone! E.g. if you have an ip 1.2.3.4
                     # if manage_reverse_zones has:
                     # - 1.2
                     # - 1.2.3
                     # then 1.2.3.4 should go in 1.2.3
                     best_match = ""
-                    for zone in zones.keys():
-                        if re.search(r"^%s\." % zone, ip) and len(zone) > len(
+                    for zone in zones:
+                        if re.search(rf"^{zone}\.", ip_address) and len(zone) > len(
                             best_match
                         ):
                             best_match = zone
@@ -235,32 +244,32 @@ class _BindManager(ManagerModule):
                     if best_match != "":
                         # strip the zone off the front of the ip reverse the rest of the octets append the remainder
                         # + dns_name
-                        ip = ip.replace(best_match, "", 1)
-                        if ip[0] == ".":  # strip leading '.' if it's there
-                            ip = ip[1:]
-                        tokens = ip.split(".")
+                        ip_address = ip_address.replace(best_match, "", 1)
+                        if ip_address[0] == ".":  # strip leading '.' if it's there
+                            ip_address = ip_address[1:]
+                        tokens = ip_address.split(".")
                         tokens.reverse()
-                        ip = ".".join(tokens)
-                        zones[best_match][ip] = host + "."
+                        ip_address = ".".join(tokens)
+                        zones[best_match][ip_address] = host + "."
 
                 if ipv6 or ipv6_sec_addrs:
-                    ip6s = []
+                    ip6s: List[str] = []
                     if ipv6:
                         ip6s.append(ipv6)
                     for each_ipv6 in ip6s + ipv6_sec_addrs:
                         # convert the IPv6 address to long format
-                        long_ipv6 = self.__expand_IPv6(each_ipv6)
+                        long_ipv6 = self.__expand_ipv6(each_ipv6)
                         # All IPv6 zones are forced to have the format xxxx:xxxx:xxxx:xxxx
                         zone = long_ipv6[:19]
                         ipv6_host_part = long_ipv6[20:]
                         tokens = list(re.sub(":", "", ipv6_host_part))
                         tokens.reverse()
-                        ip = ".".join(tokens)
-                        zones[zone][ip] = host + "."
+                        ip_address = ".".join(tokens)
+                        zones[zone][ip_address] = host + "."
 
         return zones
 
-    def __write_named_conf(self):
+    def __write_named_conf(self) -> None:
         """
         Write out the named.conf main config file from the template.
 
@@ -271,29 +280,24 @@ class _BindManager(ManagerModule):
         # forward_zones = self.settings.manage_forward_zones
         # reverse_zones = self.settings.manage_reverse_zones
 
-        metadata = {
-            "forward_zones": self.__forward_zones().keys(),
-            "reverse_zones": [],
-            "zone_include": "",
-        }
+        metadata = MetadataZoneHelper(list(self.__forward_zones().keys()), [], "")
+        metadata.bind_zonefiles = self.settings.bind_zonefile_path
 
-        for zone in metadata["forward_zones"]:
-            txt = """
-zone "%(zone)s." {
+        for zone in metadata.forward_zones:
+            txt = f"""
+zone "{zone}." {{
     type master;
-    file "%(zone)s";
-};
-""" % {
-                "zone": zone
-            }
-            metadata["zone_include"] = metadata["zone_include"] + txt
+    file "{zone}";
+}};
+"""
+            metadata.zone_include = metadata.zone_include + txt
 
-        for zone in self.__reverse_zones().keys():
+        for zone in self.__reverse_zones():
             # IPv6 zones are : delimited
             if ":" in zone:
                 # if IPv6, assume xxxx:xxxx:xxxx:xxxx
                 #                 0123456789012345678
-                long_zone = (self.__expand_IPv6(zone + "::1"))[:19]
+                long_zone = (self.__expand_ipv6(zone + "::1"))[:19]
                 tokens = list(re.sub(":", "", long_zone))
                 tokens.reverse()
                 arpa = ".".join(tokens) + ".ip6.arpa"
@@ -303,30 +307,27 @@ zone "%(zone)s." {
                 tokens.reverse()
                 arpa = ".".join(tokens) + ".in-addr.arpa"
                 #
-            metadata["reverse_zones"].append((zone, arpa))
-            txt = """
-zone "%(arpa)s." {
+            metadata.reverse_zones.append((zone, arpa))
+            txt = f"""
+zone "{arpa}." {{
     type master;
-    file "%(zone)s";
-};
-""" % {
-                "arpa": arpa,
-                "zone": zone,
-            }
-            metadata["zone_include"] = metadata["zone_include"] + txt
+    file "{zone}";
+}};
+"""
+            metadata.zone_include = metadata.zone_include + txt
 
         try:
-            f2 = open(template_file, "r")
-        except:
-            raise OSError("error reading template from file: %s" % template_file)
-        template_data = ""
-        template_data = f2.read()
-        f2.close()
+            with open(template_file, "r", encoding="UTF-8") as template_fd:
+                template_data = template_fd.read()
+        except Exception as error:
+            raise OSError(
+                f"error reading template from file: {template_file}"
+            ) from error
 
         self.logger.info("generating %s", settings_file)
-        self.templar.render(template_data, metadata, settings_file)
+        self.templar.render(template_data, metadata.__dict__, settings_file)
 
-    def __write_secondary_conf(self):
+    def __write_secondary_conf(self) -> None:
         """
         Write out the secondary.conf secondary config file from the template.
         """
@@ -335,33 +336,27 @@ zone "%(arpa)s." {
         # forward_zones = self.settings.manage_forward_zones
         # reverse_zones = self.settings.manage_reverse_zones
 
-        metadata = {
-            "forward_zones": self.__forward_zones().keys(),
-            "reverse_zones": [],
-            "zone_include": "",
-        }
+        metadata = MetadataZoneHelper(list(self.__forward_zones().keys()), [], "")
+        metadata.bind_zonefiles = self.settings.bind_zonefile_path
 
-        for zone in metadata["forward_zones"]:
-            txt = """
-zone "%(zone)s." {
+        for zone in metadata.forward_zones:
+            txt = f"""
+zone "{zone}." {{
     type slave;
-    masters {
-        %(master)s;
-    };
-    file "data/%(zone)s";
-};
-""" % {
-                "zone": zone,
-                "master": self.settings.bind_master,
-            }
-            metadata["zone_include"] = metadata["zone_include"] + txt
+    masters {{
+        {self.settings.bind_master};
+    }};
+    file "data/{zone}";
+}};
+"""
+            metadata.zone_include = metadata.zone_include + txt
 
-        for zone in self.__reverse_zones().keys():
+        for zone in self.__reverse_zones():
             # IPv6 zones are : delimited
             if ":" in zone:
                 # if IPv6, assume xxxx:xxxx:xxxx:xxxx for the zone
                 #                 0123456789012345678
-                long_zone = (self.__expand_IPv6(zone + "::1"))[:19]
+                long_zone = (self.__expand_ipv6(zone + "::1"))[:19]
                 tokens = list(re.sub(":", "", long_zone))
                 tokens.reverse()
                 arpa = ".".join(tokens) + ".ip6.arpa"
@@ -371,43 +366,39 @@ zone "%(zone)s." {
                 tokens.reverse()
                 arpa = ".".join(tokens) + ".in-addr.arpa"
                 #
-            metadata["reverse_zones"].append((zone, arpa))
-            txt = """
-zone "%(arpa)s." {
+            metadata.reverse_zones.append((zone, arpa))
+            txt = f"""
+zone "{arpa}." {{
     type slave;
-    masters {
-        %(master)s;
-    };
-    file "data/%(zone)s";
-};
-""" % {
-                "arpa": arpa,
-                "zone": zone,
-                "master": self.settings.bind_master,
-            }
-            metadata["zone_include"] = metadata["zone_include"] + txt
-            metadata["bind_master"] = self.settings.bind_master
+    masters {{
+        {self.settings.bind_master};
+    }};
+    file "data/{zone}";
+}};
+"""
+            metadata.zone_include = metadata.zone_include + txt
+            metadata.bind_master = self.settings.bind_master
 
         try:
-            f2 = open(template_file, "r")
-        except:
-            raise OSError("error reading template from file: %s" % template_file)
-        template_data = ""
-        template_data = f2.read()
-        f2.close()
+            with open(template_file, "r", encoding="UTF-8") as template_fd:
+                template_data = template_fd.read()
+        except Exception as error:
+            raise OSError(
+                f"error reading template from file: {template_file}"
+            ) from error
 
         self.logger.info("generating %s", settings_file)
-        self.templar.render(template_data, metadata, settings_file)
+        self.templar.render(template_data, metadata.__dict__, settings_file)
 
-    def __ip_sort(self, ips: list):
+    def __ip_sort(self, ips: List[str]) -> List[str]:
         """
         Sorts IP addresses (or partial addresses) in a numerical fashion per-octet or quartet
 
         :param ips: A list of all IP addresses (v6 and v4 mixed possible) which shall be sorted.
         :return: The list with sorted IP addresses.
         """
-        quartets = []
-        octets = []
+        quartets: List[List[int]] = []
+        octets: List[List[int]] = []
         for each_ip in ips:
             # IPv6 addresses are ':' delimited
             if ":" in each_ip:
@@ -418,18 +409,18 @@ zone "%(arpa)s." {
                 # IPv4
                 # strings to integer octet chunks so we can sort numerically
                 octets.append([int(i) for i in each_ip.split(".")])
+
         quartets.sort()
-        # integers back to four character hex strings
-        quartets = [[format(i, "04x") for i in x] for x in quartets]
-        #
         octets.sort()
+
+        # integers back to four character hex strings
+        quartets_str = [[format(i, "04x") for i in x] for x in quartets]
         # integers back to strings
-        octets = [[str(i) for i in x] for x in octets]
-        #
-        return [".".join(i) for i in octets] + [":".join(i) for i in quartets]
+        octets_str = [[str(i) for i in x] for x in octets]
+        return [".".join(i) for i in octets_str] + [":".join(i) for i in quartets_str]
 
     def __pretty_print_host_records(
-        self, hosts, rectype: str = "A", rclass: str = "IN"
+        self, hosts: Dict[str, Any], rectype: str = "A", rclass: str = "IN"
     ) -> str:
         """
         Format host records by order and with consistent indentation
@@ -444,14 +435,14 @@ zone "%(arpa)s." {
         # particular system
 
         for system in self.systems:
-            for (name, interface) in system.interfaces.items():
+            for name, interface in system.interfaces.items():
                 if interface.dns_name == "":
                     self.logger.info(
                         "Warning: dns_name unspecified in the system: %s, while writing host records",
                         system.name,
                     )
 
-        names = [k for k, v in hosts.items()]
+        names = list(hosts.keys())
         if not names:
             return ""  # zones with no hosts
 
@@ -462,10 +453,10 @@ zone "%(arpa)s." {
 
         max_name = max([len(i) for i in names])
 
-        s = ""
+        result = ""
         for name in names:
             spacing = " " * (max_name - len(name))
-            my_name = "%s%s" % (name, spacing)
+            my_name = f"{name}{spacing}"
             my_host_record = hosts[name]
             my_host_list = []
             if isinstance(my_host_record, str):
@@ -479,10 +470,12 @@ zone "%(arpa)s." {
                         my_rectype = "AAAA"
                     else:
                         my_rectype = "A   "
-                s += "%s  %s  %s  %s;\n" % (my_name, rclass, my_rectype, my_host)
-        return s
+                result += f"{my_name}  {rclass}  {my_rectype}  {my_host};\n"
+        return result
 
-    def __pretty_print_cname_records(self, hosts, rectype: str = "CNAME"):
+    def __pretty_print_cname_records(
+        self, hosts: Dict[str, Any], rectype: str = "CNAME"
+    ) -> str:
         """
         Format CNAMEs and with consistent indentation
 
@@ -490,37 +483,36 @@ zone "%(arpa)s." {
         :param rectype: The type of record which shall be pretty printed.
         :return: The pretty printed version of the cname records.
         """
-        s = ""
+        result = ""
 
         # This loop warns and skips the host without dns_name instead of outright exiting
         # Which results in empty records without any warning to the users
 
         for system in self.systems:
-            for (name, interface) in system.interfaces.items():
+            for _, interface in system.interfaces.items():
                 cnames = interface.cnames
 
                 try:
-                    if interface.get("dns_name", "") != "":
+                    if interface.dns_name != "":
                         dnsname = interface.dns_name.split(".")[0]
                         for cname in cnames:
-                            s += "%s  %s  %s;\n" % (
-                                cname.split(".")[0],
-                                rectype,
-                                dnsname,
-                            )
+                            result += f"{cname.split('.')[0]}  {rectype}  {dnsname};\n"
                     else:
-                        self.logger.info(
-                            "Warning: dns_name unspecified in the system: %s, Skipped!, while writing "
-                            "cname records",
+                        self.logger.warning(
+                            'CNAME generation for system "%s" was skipped due to a missing dns_name entry while writing'
+                            "records!",
                             system.name,
                         )
                         continue
-                except:
-                    pass
+                except Exception as exception:
+                    self.logger.exception(
+                        "Unspecified error during creation of CNAME for bind9 records!",
+                        exc_info=exception,
+                    )
 
-        return s
+        return result
 
-    def __write_zone_files(self):
+    def __write_zone_files(self) -> None:
         """
         Write out the forward and reverse zone files for all configured zones
         """
@@ -531,36 +523,32 @@ zone "%(arpa)s." {
         # need a counter for new bind format
         serial = time.strftime("%Y%m%d00")
         try:
-            serialfd = open(serial_filename, "r")
-            old_serial = serialfd.readline()
-            # same date
-            if serial[0:8] == old_serial[0:8]:
-                if int(old_serial[8:10]) < 99:
-                    serial = "%s%.2i" % (serial[0:8], int(old_serial[8:10]) + 1)
-            else:
-                pass
-            serialfd.close()
-        except:
+            with open(serial_filename, "r", encoding="UTF-8") as serialfd:
+                old_serial = serialfd.readline()
+                # same date
+                if serial[0:8] == old_serial[0:8]:
+                    if int(old_serial[8:10]) < 99:
+                        serial = f"{serial[0:8]}{int(old_serial[8:10]) + 1:.2d}"
+        except Exception:
             pass
 
-        serialfd = open(serial_filename, "w")
-        serialfd.write(serial)
-        serialfd.close()
+        with open(serial_filename, "w", encoding="UTF-8") as serialfd:
+            serialfd.write(serial)
 
         forward = self.__forward_zones()
         reverse = self.__reverse_zones()
 
         try:
-            f2 = open(default_template_file, "r")
-        except:
-            raise CX("error reading template from file: %s" % default_template_file)
-        default_template_data = ""
-        default_template_data = f2.read()
-        f2.close()
+            with open(default_template_file, "r", encoding="UTF-8") as template_fd:
+                default_template_data = template_fd.read()
+        except Exception as error:
+            raise CX(
+                f"error reading template from file: {default_template_file}"
+            ) from error
 
         zonefileprefix = self.settings.bind_chroot_path + self.zonefile_base
 
-        for (zone, hosts) in forward.items():
+        for zone, hosts in forward.items():
             metadata = {
                 "cobbler_server": cobbler_server,
                 "serial": serial,
@@ -571,7 +559,7 @@ zone "%(arpa)s." {
             }
 
             if ":" in zone:
-                long_zone = (self.__expand_IPv6(zone + "::1"))[:19]
+                long_zone = (self.__expand_ipv6(zone + "::1"))[:19]
                 tokens = list(re.sub(":", "", long_zone))
                 tokens.reverse()
                 zone_origin = ".".join(tokens) + ".ip6.arpa."
@@ -579,15 +567,18 @@ zone "%(arpa)s." {
                 zone_origin = ""
             # grab zone-specific template if it exists
             try:
-                fd = open("/etc/cobbler/zone_templates/%s" % zone)
-                # If this is an IPv6 zone, set the origin to the zone for this
-                # template
-                if zone_origin:
-                    template_data = r"\$ORIGIN " + zone_origin + "\n" + fd.read()
-                else:
-                    template_data = fd.read()
-                fd.close()
-            except:
+                with open(
+                    f"/etc/cobbler/zone_templates/{zone}", encoding="UTF-8"
+                ) as zone_fd:
+                    # If this is an IPv6 zone, set the origin to the zone for this
+                    # template
+                    if zone_origin:
+                        template_data = (
+                            r"\$ORIGIN " + zone_origin + "\n" + zone_fd.read()
+                        )
+                    else:
+                        template_data = zone_fd.read()
+            except Exception:
                 # If this is an IPv6 zone, set the origin to the zone for this
                 # template
                 if zone_origin:
@@ -604,7 +595,7 @@ zone "%(arpa)s." {
             self.logger.info("generating (forward) %s", zonefilename)
             self.templar.render(template_data, metadata, zonefilename)
 
-        for (zone, hosts) in reverse.items():
+        for zone, hosts in reverse.items():
             metadata = {
                 "cobbler_server": cobbler_server,
                 "serial": serial,
@@ -616,10 +607,11 @@ zone "%(arpa)s." {
 
             # grab zone-specific template if it exists
             try:
-                fd = open("/etc/cobbler/zone_templates/%s" % zone)
-                template_data = fd.read()
-                fd.close()
-            except:
+                with open(
+                    f"/etc/cobbler/zone_templates/{zone}", encoding="UTF-8"
+                ) as zone_fd:
+                    template_data = zone_fd.read()
+            except Exception:
                 template_data = default_template_data
 
             metadata["cname_record"] = self.__pretty_print_cname_records(hosts)
@@ -631,7 +623,7 @@ zone "%(arpa)s." {
             self.logger.info("generating (reverse) %s", zonefilename)
             self.templar.render(template_data, metadata, zonefilename)
 
-    def write_configs(self):
+    def write_configs(self) -> None:
         """
         BIND files are written when ``manage_dns`` is set in our settings.
         """
@@ -640,21 +632,16 @@ zone "%(arpa)s." {
         self.__write_secondary_conf()
         self.__write_zone_files()
 
-    def restart_service(self):
+    def restart_service(self) -> int:
         """
         This syncs the bind server with it's new config files.
         Basically this restarts the service to apply the changes.
         """
-        # TODO: Reuse the utils method for service restarts
         named_service_name = utils.named_service_name()
-        dns_restart_command = ["service", named_service_name, "restart"]
-        ret = utils.subprocess_call(dns_restart_command, shell=False)
-        if ret != 0:
-            self.logger.error("%s service failed", named_service_name)
-        return ret
+        return process_management.service_restart(named_service_name)
 
 
-def get_manager(api):
+def get_manager(api: "CobblerAPI") -> "_BindManager":
     """
     This returns the object to manage a BIND server located locally on the Cobbler server.
 
@@ -665,5 +652,5 @@ def get_manager(api):
     global MANAGER  # pylint: disable=global-statement
 
     if not MANAGER:
-        MANAGER = _BindManager(api)
+        MANAGER = _BindManager(api)  # type: ignore
     return MANAGER

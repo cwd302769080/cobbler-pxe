@@ -1,46 +1,35 @@
-import pytest
+"""
+Tests that validate the functionality of the module that is responsible for providing XML-RPC calls related to images.
+"""
 
-# TODO: Create fixture where image is create
+from typing import Callable
 
-
-@pytest.fixture(scope="function")
-def remove_item(remote, token):
-    """
-    Remove an item with the given name.
-
-    :param token: The fixture to have the token for authenticated strings available.
-    :param remote: The fixture to have the base xmlrpc connection.
-    """
-
-    def _remove_item(itemtype, name):
-        yield
-        remote.remove_item(itemtype, name, token)
-
-    return _remove_item
+from cobbler.items.image import Image
+from cobbler.remote import CobblerXMLRPCInterface
 
 
 class TestImage:
-    def test_create_image(self, remote, token):
+    """
+    TODO
+    """
+
+    def test_create_image(self, remote: CobblerXMLRPCInterface, token: str):
         """
-        Test: create/edit of an image object"""
-
-        # Arrange
-
+        Test: create/edit of an image object
+        """
         # Act
-        images = remote.get_images(token)
         image = remote.new_image(token)
 
         # Assert
         assert remote.modify_image(image, "name", "testimage0", token)
         assert remote.save_image(image, token)
-        new_images = remote.get_images(token)
-        assert len(new_images) == len(images) + 1
+        image_list = remote.get_images(token)
+        assert len(image_list) == 1
 
-    def test_get_images(self, remote):
+    def test_get_images(self, remote: CobblerXMLRPCInterface):
         """
         Test: get images
         """
-
         # Arrange
 
         # Act
@@ -48,68 +37,93 @@ class TestImage:
 
         # Assert
 
-    def test_get_image(self, remote):
+    def test_get_image(
+        self, remote: CobblerXMLRPCInterface, create_image: Callable[[], Image]
+    ):
         """
         Test: Get an image object
         """
-
         # Arrange
+        test_image = create_image()
 
         # Act
+        result_image = remote.get_image(test_image.name)
 
         # Assert
-        image = remote.get_image("testimage0")
+        assert result_image.get("name") == test_image.name  # type: ignore[reportUnknownMemberType]
 
-    def test_find_image(self, remote, token):
+    def test_find_image(
+        self,
+        remote: CobblerXMLRPCInterface,
+        token: str,
+        create_image: Callable[[], Image],
+    ):
         """
         Test: Find an image object
         """
-
         # Arrange
+        test_image = create_image()
 
         # Act
-        result = remote.find_image({"name": "testimage0"}, token)
+        result = remote.find_image({"name": test_image.name}, True, False, token)
+        print(result)
+
+        # Assert - We want to find exactly the one item we added
+        assert len(result) == 1
+        assert result[0].get("name") == test_image.name
+
+    def test_copy_image(
+        self,
+        remote: CobblerXMLRPCInterface,
+        token: str,
+        create_image: Callable[[], Image],
+    ):
+        """
+        Test: Copy an image object
+        """
+        # Arrange
+        test_image = create_image()
+        new_name = "testimagecopy"
+
+        # Act
+        result = remote.copy_image(test_image.uid, new_name, token)
 
         # Assert
         assert result
 
-    def test_copy_image(self, remote, token):
-        """
-        Test: Copy an image object
-        """
-
-        # Arrange
-
-        # Act
-        image = remote.get_item_handle("image", "testimage0", token)
-
-        # Assert
-        assert remote.copy_image(image, "testimagecopy", token)
-
-    def test_rename_image(self, remote, token, remove_item):
+    def test_rename_image(
+        self,
+        remote: CobblerXMLRPCInterface,
+        token: str,
+        create_image: Callable[[], Image],
+    ):
         """
         Test: Rename an image object
         """
         # Arrange
-        name = "testimage1"
-        image = remote.get_item_handle("image", "testimagecopy", token)
+        test_image = create_image()
+        new_name = "testimage_renamed"
 
         # Act
-        result = remote.rename_image(image, name, token)
-
-        # Cleanup
-        remote.remove_item("image", name, token)
+        result = remote.rename_image(test_image.uid, new_name, token)
 
         # Assert
         assert result
 
-    def test_remove_image(self, remote, token):
+    def test_remove_image(
+        self,
+        remote: CobblerXMLRPCInterface,
+        token: str,
+        create_image: Callable[[], Image],
+    ):
         """
         Test: remove an image object
         """
         # Arrange
+        test_image = create_image()
 
         # Act
+        result = remote.remove_image(test_image.name, token)
 
         # Assert
-        assert remote.remove_image("testimage0", token)
+        assert result

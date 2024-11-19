@@ -1,14 +1,20 @@
 """
 Migration from V2.8.5 to V3.0.0
 """
+
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: 2021 Dominik Gedon <dgedon@suse.de>
 # SPDX-FileCopyrightText: 2021 Enno Gotthold <egotthold@suse.de>
 # SPDX-FileCopyrightText: Copyright SUSE LLC
+import glob
+import json
+import os
+import shutil
+from typing import Any, Dict, List
 
-from schema import Optional, Or, Schema, SchemaError
-from cobbler.settings.migrations import helper
-from cobbler.settings.migrations import V2_8_5
+from schema import Optional, Or, Schema, SchemaError  # type: ignore
+
+from cobbler.settings.migrations import V2_8_5, helper
 
 schema = Schema(
     {
@@ -95,7 +101,7 @@ schema = Schema(
         ): list,
         "power_management_default_type": str,
         "power_template_dir": str,
-        Optional("proxy_url_ext", default=""): Or(None, str),
+        Optional("proxy_url_ext", default=""): Or(None, str),  # type: ignore
         "proxy_url_int": str,
         "puppet_auto_setup": int,
         "puppetca_path": str,
@@ -136,12 +142,12 @@ schema = Schema(
         "yum_distro_priority": int,
         "yum_post_install_mirror": int,
         "yumdownloader_flags": str,
-    },
+    },  # type: ignore
     ignore_extra_keys=False,
 )
 
 
-def validate(settings: dict) -> bool:
+def validate(settings: Dict[str, Any]) -> bool:
     """
     Checks that a given settings dict is valid according to the reference schema ``schema``.
 
@@ -149,23 +155,24 @@ def validate(settings: dict) -> bool:
     :return: True if valid settings dict otherwise False.
     """
     try:
-        schema.validate(settings)
+        schema.validate(settings)  # type: ignore
     except SchemaError:
         return False
     return True
 
 
-def normalize(settings: dict) -> dict:
+def normalize(settings: Dict[str, Any]) -> Dict[str, Any]:
     """
     If data in ``settings`` is valid the validated data is returned.
 
     :param settings: The settings dict to validate.
     :return: The validated dict.
     """
-    return schema.validate(settings)
+    # We are aware of our schema and thus can safely ignore this.
+    return schema.validate(settings)  # type: ignore
 
 
-def migrate(settings: dict) -> dict:
+def migrate(settings: Dict[str, Any]) -> Dict[str, Any]:
     """
     Migration of the settings ``settings`` to the V3.0.0 settings
 
@@ -206,7 +213,7 @@ def migrate(settings: dict) -> dict:
         "tftpboot_location": "/srv/tftpboot",
         "webdir_whitelist": [],
     }
-    for (key, value) in missing_keys.items():
+    for key, value in missing_keys.items():
         new_setting = helper.Setting(key, value)
         helper.key_add(new_setting, settings)
 
@@ -223,5 +230,139 @@ def migrate(settings: dict) -> dict:
     for key in deleted_keys:
         helper.key_delete(key, settings)
 
-    # TODO: v2 to v3 script
+    # START: migrate-data-v2-to-v3
+    def serialize_item(collection: str, item: Dict[str, Any]) -> None:
+        """
+        Save a collection item to file system
+
+        :param collection: name
+        :param item: dictionary
+        """
+        filename = f"/var/lib/cobbler/collections/{collection}/{item['name']}"
+
+        if settings.get("serializer_pretty_json", False):
+            sort_keys = True
+            indent = 4
+        else:
+            sort_keys = False
+            indent = None
+
+        filename += ".json"
+        with open(filename, "w", encoding="UTF-8") as item_fd:
+            data = json.dumps(item, sort_keys=sort_keys, indent=indent)
+            item_fd.write(data)
+
+    def deserialize_raw_old(collection_types: str) -> List[Dict[str, Any]]:
+        results = []
+        all_files = glob.glob(f"/var/lib/cobbler/config/{collection_types}/*")
+
+        for file in all_files:
+            with open(file, encoding="UTF-8") as item_fd:
+                json_data = item_fd.read()
+                _dict = json.loads(json_data)
+                results.append(_dict)  # type: ignore
+        return results  # type: ignore
+
+    def substitute_paths(value: Any) -> Any:
+        if isinstance(value, list):
+            value = [substitute_paths(x) for x in value]  # type: ignore
+        elif isinstance(value, str):
+            value = value.replace("/ks_mirror/", "/distro_mirror/")
+        return value
+
+    def transform_key(key: str, value: Any) -> Any:
+        if key in transform:
+            ret_value = transform[key](value)
+        else:
+            ret_value = value
+
+        return substitute_paths(ret_value)
+
+    # Keys to add to various collections
+    add = {
+        "distros": {
+            "boot_loader": "grub",
+        },
+        "profiles": {
+            "next_server": "<<inherit>>",
+        },
+        "systems": {
+            "boot_loader": "<<inherit>>",
+            "next_server": "<<inherit>>",
+            "power_identity_file": "",
+            "power_options": "",
+            "serial_baud_rate": "",
+            "serial_device": "",
+        },
+    }
+
+    # Keys to remove
+    remove = [
+        "ldap_enabled",
+        "ldap_type",
+        "monit_enabled",
+        "redhat_management_server",
+        "template_remote_kickstarts",
+    ]
+
+    # Keys to rename
+    rename = {
+        "kickstart": "autoinstall",
+        "ks_meta": "autoinstall_meta",
+    }
+
+    # Keys to transform - use new key name if renamed
+    transform = {
+        "autoinstall": os.path.basename,
+    }
+
+    # Convert the old collections to new collections
+    for old_type in [
+        "distros.d",
+        "files.d",
+        "images.d",
+        "mgmtclasses.d",
+        "packages.d",
+        "profiles.d",
+        "repos.d",
+        "systems.d",
+    ]:
+        new_type = old_type[:-2]
+        # Load old files
+        old_collection = deserialize_raw_old(old_type)
+        print(f"Processing {old_type}:")
+
+        for old_item in old_collection:
+            print(f"    Processing {old_item['name']}")
+            new_item: Dict[str, Any] = {}
+            for key in old_item:
+                if key in remove:
+                    continue
+                if key in rename:
+                    new_item[rename[key]] = transform_key(rename[key], old_item[key])
+                    continue
+                new_item[key] = transform_key(key, old_item[key])
+
+            if new_type in add:
+                # We only add items if they don't exist
+                for item in add[new_type]:
+                    if item not in new_item:
+                        new_item[item] = add[new_type][item]
+
+            serialize_item(new_type, new_item)
+
+    path_rename = [
+        ("/var/lib/cobbler/kickstarts", "/var/lib/cobbler/templates"),
+        ("/var/www/cobbler/ks_mirror", "/var/www/cobbler/distro_mirror"),
+    ]
+
+    # Copy paths
+    for old_path, new_path in path_rename:
+        if os.path.isdir(old_path):
+            shutil.copytree(old_path, new_path)
+            os.rename(old_path, new_path)
+
+    # END: migrate-data-v2-to-v3
+    if not validate(settings):
+        raise SchemaError("V3.0.0: Schema error while validating")
     return normalize(settings)

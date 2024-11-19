@@ -12,6 +12,7 @@ Subpackages
    cobbler.items
    cobbler.modules
    cobbler.settings
+   cobbler.utils
 
 Submodules
 ----------
@@ -72,6 +73,14 @@ cobbler.configgen module
    :undoc-members:
    :show-inheritance:
 
+cobbler.decorator module
+------------------------
+
+.. automodule:: cobbler.decorator
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 cobbler.download\_manager module
 --------------------------------
 
@@ -92,14 +101,6 @@ cobbler.grub module
 -------------------
 
 .. automodule:: cobbler.grub
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-cobbler.manager module
-----------------------
-
-.. automodule:: cobbler.manager
    :members:
    :undoc-members:
    :show-inheritance:
@@ -164,14 +165,6 @@ cobbler.tftpgen module
 ----------------------
 
 .. automodule:: cobbler.tftpgen
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-cobbler.utils module
---------------------
-
-.. automodule:: cobbler.utils
    :members:
    :undoc-members:
    :show-inheritance:

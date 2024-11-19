@@ -1,6 +1,14 @@
 cobbler.items package
 =====================
 
+Subpackages
+-----------
+
+.. toctree::
+   :maxdepth: 4
+
+   cobbler.items.abstract
+
 Submodules
 ----------
 
@@ -8,14 +16,6 @@ cobbler.items.distro module
 ---------------------------
 
 .. automodule:: cobbler.items.distro
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-cobbler.items.file module
--------------------------
-
-.. automodule:: cobbler.items.file
    :members:
    :undoc-members:
    :show-inheritance:
@@ -28,14 +28,6 @@ cobbler.items.image module
    :undoc-members:
    :show-inheritance:
 
-cobbler.items.item module
--------------------------
-
-.. automodule:: cobbler.items.item
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 cobbler.items.menu module
 -------------------------
 
@@ -44,18 +36,10 @@ cobbler.items.menu module
    :undoc-members:
    :show-inheritance:
 
-cobbler.items.mgmtclass module
-------------------------------
+cobbler.items.network\_interface module
+---------------------------------------
 
-.. automodule:: cobbler.items.mgmtclass
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-cobbler.items.package module
-----------------------------
-
-.. automodule:: cobbler.items.package
+.. automodule:: cobbler.items.network_interface
    :members:
    :undoc-members:
    :show-inheritance:
@@ -72,14 +56,6 @@ cobbler.items.repo module
 -------------------------
 
 .. automodule:: cobbler.items.repo
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-cobbler.items.resource module
------------------------------
-
-.. automodule:: cobbler.items.resource
    :members:
    :undoc-members:
    :show-inheritance:

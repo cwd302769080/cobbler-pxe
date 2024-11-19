@@ -1,30 +1,19 @@
 """
 Cobbler daemon for logging remote syslog traffic during automatic installation
-
-Copyright 2007-2009, Red Hat, Inc and Others
-Michael DeHaan <michael.dehaan AT gmail>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
-02110-1301  USA
 """
 
+# SPDX-License-Identifier: GPL-2.0-or-later
+# SPDX-FileCopyrightText: Copyright 2007-2009, Red Hat, Inc and Others
+# SPDX-FileCopyrightText: Michael DeHaan <michael.dehaan AT gmail>
+
 import binascii
+import logging
 import logging.config
 import os
 import pwd
 import time
+
+import systemd.daemon  # type: ignore
 
 from cobbler import remote, utils
 from cobbler.api import CobblerAPI
@@ -36,7 +25,7 @@ if os.geteuid() == 0 and os.path.exists("/etc/cobbler/logging_config.conf"):
 logger = logging.getLogger()
 
 
-def core(cobbler_api: CobblerAPI):
+def core(cobbler_api: CobblerAPI) -> None:
     """
     Starts Cobbler.
 
@@ -49,17 +38,16 @@ def core(cobbler_api: CobblerAPI):
     do_xmlrpc_rw(cobbler_api, xmlrpc_port)
 
 
-def regen_ss_file():
+def regen_ss_file() -> None:
     """
     This is only used for Kerberos auth at the moment. It identifies XMLRPC requests from Apache that have already been
     cleared by Kerberos.
     """
     ssfile = "/var/lib/cobbler/web.ss"
-    with open("/dev/urandom", "rb") as fd:
-        data = fd.read(512)
+    data = os.urandom(512)
 
-    with open(ssfile, "wb", 0o660) as fd:
-        fd.write(binascii.hexlify(data))
+    with open(ssfile, "w", 0o660, encoding="UTF-8") as ss_file_fd:
+        ss_file_fd.write(str(binascii.hexlify(data)))
 
     http_user = "apache"
     family = utils.get_family()
@@ -67,10 +55,10 @@ def regen_ss_file():
         http_user = "www-data"
     elif family == "suse":
         http_user = "wwwrun"
-    os.lchown("/var/lib/cobbler/web.ss", pwd.getpwnam(http_user)[2], -1)
+    os.lchown(ssfile, pwd.getpwnam(http_user)[2], -1)
 
 
-def do_xmlrpc_rw(cobbler_api: CobblerAPI, port):
+def do_xmlrpc_rw(cobbler_api: CobblerAPI, port: int) -> None:
     """
     This trys to bring up the Cobbler xmlrpc_api and restart it if it fails.
 
@@ -81,22 +69,26 @@ def do_xmlrpc_rw(cobbler_api: CobblerAPI, port):
         cobbler_api, remote.CobblerXMLRPCInterface
     )
     server = remote.CobblerXMLRPCServer(("127.0.0.1", port))
-    server.logRequests = 0  # don't print stuff
+    # don't log requests; ignore mypy due to multiple inheritance & protocols being 3.8+
+    server.logRequests = False  # type: ignore[attr-defined]
     logger.debug("XMLRPC running on %s", port)
     server.register_instance(xinterface)
     start_time = ""
     try:
         import psutil
 
-        p = psutil.Process(os.getpid())
-        start_time = " in %s seconds" % str(time.time() - p.create_time())
+        ps_util = psutil.Process(os.getpid())
+        start_time = f" in {str(time.time() - ps_util.create_time())} seconds"
     except ModuleNotFoundError:
         # This is not critical, but debug only - just install python3-psutil
         pass
 
+    systemd.daemon.notify("READY=1")  # type: ignore
     while True:
         try:
             logger.info("Cobbler startup completed %s", start_time)
+            # Start background load_items task
+            xinterface.proxied.background_load_items()
             server.serve_forever()
         except IOError:
             # interrupted? try to serve again

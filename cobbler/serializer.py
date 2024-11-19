@@ -1,141 +1,150 @@
 """
 Serializer code for Cobbler
-Now adapted to support different storage backends
-
-Copyright 2006-2009, Red Hat, Inc and Others
-Michael DeHaan <michael.dehaan AT gmail>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
-02110-1301  USA
 """
 
+# SPDX-License-Identifier: GPL-2.0-or-later
+# SPDX-FileCopyrightText: Copyright 2006-2009, Red Hat, Inc and Others
+# SPDX-FileCopyrightText: Michael DeHaan <michael.dehaan AT gmail>
+
 import fcntl
+import logging
 import os
+import pathlib
 import sys
 import time
-import traceback
+from types import ModuleType
+from typing import TYPE_CHECKING, Any, Dict, Optional, TextIO
 
-from cobbler import module_loader
-
-LOCK_ENABLED = True
-LOCK_HANDLE = None
-
-
-def handler(num, frame):
-    print("Ctrl-C not allowed during writes. Please wait.", file=sys.stderr)
-    return True
+if TYPE_CHECKING:
+    from cobbler.api import CobblerAPI
+    from cobbler.cobbler_collections.collection import ITEM, Collection
 
 
-def __grab_lock():
+class Serializer:
     """
-    Dual purpose locking:
-    (A) flock to avoid multiple process access
-    (B) block signal handler to avoid ctrl+c while writing YAML
-    """
-    try:
-        if LOCK_ENABLED:
-            if not os.path.exists("/var/lib/cobbler/lock"):
-                fd = open("/var/lib/cobbler/lock", "w+")
-                fd.close()
-            LOCK_HANDLE = open("/var/lib/cobbler/lock", "r")
-            fcntl.flock(LOCK_HANDLE.fileno(), fcntl.LOCK_EX)
-    except:
-        # this is pretty much FATAL, avoid corruption and quit now.
-        traceback.print_exc()
-        sys.exit(7)
-
-
-def __release_lock(with_changes=False):
-    if with_changes:
-        # this file is used to know the time of last modification on cobbler_collections
-        # was made -- allowing the API to work more smoothly without
-        # a lot of unneccessary reloads.
-        fd = open("/var/lib/cobbler/.mtime", "w")
-        fd.write("%f" % time.time())
-        fd.close()
-    if LOCK_ENABLED:
-        LOCK_HANDLE = open("/var/lib/cobbler/lock", "r")
-        fcntl.flock(LOCK_HANDLE.fileno(), fcntl.LOCK_UN)
-        LOCK_HANDLE.close()
-
-
-def serialize(collection):
-    """
-    Save a collection to disk
-
-    :param collection: The collection to serialize.
+    Serializer interface that is used to access data in Cobbler independent of the actual data source.
     """
 
-    __grab_lock()
-    storage_module = __get_storage_module(collection.collection_type())
-    storage_module.serialize(collection)
-    __release_lock()
+    def __init__(self, api: "CobblerAPI"):
+        """
+        Constructor that created the state for the object.
 
+        :param api: The CobblerAPI that is used for accessing shared functionality.
+        """
+        self.api = api
+        self.logger = logging.getLogger()
+        self.lock_enabled = True
+        self.lock_handle: Optional[TextIO] = None
+        self.lock_file_location = "/var/lib/cobbler/lock"
+        self.storage_module = self.__get_storage_module()
+        self.storage_object = self.storage_module.storage_factory(api)
 
-def serialize_item(collection, item):
-    """
-    Save a collection item to disk
+    def __grab_lock(self) -> None:
+        """
+        Dual purpose locking:
+        (A) flock to avoid multiple process access
+        (B) block signal handler to avoid ctrl+c while writing YAML
+        """
+        try:
+            if self.lock_enabled:
+                if not os.path.exists(self.lock_file_location):
+                    pathlib.Path(self.lock_file_location).touch()
+                self.lock_handle = open(self.lock_file_location, "r", encoding="UTF-8")
+                fcntl.flock(self.lock_handle.fileno(), fcntl.LOCK_EX)
+        except Exception as exception:
+            # this is pretty much FATAL, avoid corruption and quit now.
+            self.logger.exception("File locking error.", exc_info=exception)
+            sys.exit(7)
 
-    :param collection: The Cobbler collection to know the type of the item.
-    :param item: The collection item to serialize.
-    """
+    def __release_lock(self, with_changes: bool = False) -> None:
+        """
+        Releases the lock on the resource that is currently being written.
 
-    __grab_lock()
-    storage_module = __get_storage_module(collection.collection_type())
-    storage_module.serialize_item(collection, item)
-    __release_lock(with_changes=True)
+        :param with_changes: If this is true the global modification time is being updated. Default is false.
+        """
+        if with_changes:
+            # this file is used to know the time of last modification on cobbler_collections
+            # was made -- allowing the API to work more smoothly without
+            # a lot of unnecessary reloads.
+            with open(self.api.mtime_location, "w", encoding="UTF-8") as mtime_fd:
+                mtime_fd.write(f"{time.time():f}")
+        if self.lock_enabled:
+            self.lock_handle = open(self.lock_file_location, "r", encoding="UTF-8")
+            fcntl.flock(self.lock_handle.fileno(), fcntl.LOCK_UN)
+            self.lock_handle.close()
 
+    def serialize(self, collection: "Collection[ITEM]") -> None:
+        """
+        Save a collection to disk
 
-def serialize_delete(collection, item):
-    """
-    Delete a collection item from disk
+        :param collection: The collection to serialize.
+        """
 
-    :param collection: The Cobbler collection to know the type of the item.
-    :param item: The collection item to delete.
-    """
+        self.__grab_lock()
+        self.storage_object.serialize(collection)
+        self.__release_lock()
 
-    __grab_lock()
-    storage_module = __get_storage_module(collection.collection_type())
-    storage_module.serialize_delete(collection, item)
-    __release_lock(with_changes=True)
+    def serialize_item(self, collection: "Collection[ITEM]", item: "ITEM") -> None:
+        """
+        Save a collection item to disk
 
+        :param collection: The Cobbler collection to know the type of the item.
+        :param item: The collection item to serialize.
+        """
 
-def deserialize(collection, topological: bool = True):
-    """
-    Load a collection from disk.
+        self.__grab_lock()
+        self.storage_object.serialize_item(collection, item)
+        self.__release_lock(with_changes=True)
 
-    :param collection: The Cobbler collection to know the type of the item.
-    :param topological: Sort collection based on each items' depth attribute
-                        in the list of collection items.  This ensures
-                        properly ordered object loading from disk with
-                        objects having parent/child relationships, i.e.
-                        profiles/subprofiles.  See cobbler/items/item.py
-    """
-    __grab_lock()
-    storage_module = __get_storage_module(collection.collection_type())
-    storage_module.deserialize(collection, topological)
-    __release_lock()
+    def serialize_delete(self, collection: "Collection[ITEM]", item: "ITEM") -> None:
+        """
+        Delete a collection item from disk
 
+        :param collection: The Cobbler collection to know the type of the item.
+        :param item: The collection item to delete.
+        """
 
-def __get_storage_module(collection_type):
-    """
-    Look up serializer in /etc/cobbler/modules.conf
+        self.__grab_lock()
+        self.storage_object.serialize_delete(collection, item)
+        self.__release_lock(with_changes=True)
 
-    :param collection_type: str
-    :returns: A Python module.
-    """
-    return module_loader.get_module_from_file(
-        "serializers", collection_type, "serializers.file"
-    )
+    def deserialize(
+        self, collection: "Collection[ITEM]", topological: bool = True
+    ) -> None:
+        """
+        Load a collection from disk.
+
+        :param collection: The Cobbler collection to know the type of the item.
+        :param topological: Sort collection based on each items' depth attribute in the list of collection items. This
+                            ensures properly ordered object loading from disk with objects having parent/child
+                            relationships, i.e. profiles/subprofiles.  See cobbler/items/abstract/inheritable_item.py
+        """
+        self.__grab_lock()
+        self.storage_object.deserialize(collection, topological)
+        self.__release_lock()
+
+    def deserialize_item(self, collection_type: str, item_name: str) -> Dict[str, Any]:
+        """
+        Load a collection item from disk.
+
+        :param collection_type: The collection type to deserialize.
+        :param item_name: The collection item name to deserialize.
+        """
+        self.__grab_lock()
+        result = self.storage_object.deserialize_item(collection_type, item_name)
+        self.__release_lock()
+        return result
+
+    def __get_storage_module(self) -> ModuleType:
+        """
+        Look up configured module in the settings
+
+        :returns: A Python module.
+        """
+        return self.api.get_module_from_file(
+            "serializers",
+            self.api.settings()
+            .modules.get("serializers", {})
+            .get("module", "serializers.file"),
+            "serializers.file",
+        )

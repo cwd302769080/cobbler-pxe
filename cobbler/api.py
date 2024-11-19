@@ -1,22 +1,118 @@
 """
-Copyright 2006-2009, Red Hat, Inc and Others
-Michael DeHaan <michael.dehaan AT gmail>
+This module represents the Cobbler Python API. It is used by the XML-RPC API and can be used by external consumers.
 
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
+Changelog:
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+Schema: From -> To
 
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
-02110-1301  USA
+Current Schema: Please refer to the documentation visible of the individual methods.
+
+V3.4.0 (unreleased)
+    * Added:
+        * ``clean_items_cache``
+        * ``new_item``
+        * ``deserialize_item``
+        * ``input_string_or_list_no_inherit``
+        * ``input_string_or_list``
+        * ``input_string_or_dict``
+        * ``input_string_or_dict_no_inherit``
+        * ``input_boolean``
+        * ``input_int``
+    * Changed:
+        * ``new_*``: Accepts kwargs as a last argument now (so a dict) that makes it possible to seed an object
+    * Removed:
+        * Unused reporter module
+
+V3.3.4 (unreleased)
+    * No changes
+
+V3.3.3
+    * Added:
+        * ``get_item_resolved_value``
+        * ``set_item_resolved_value``
+    * Changed:
+        * ``dump_vars``: Added boolean parameter ``remove_dicts`` as a new last argument
+
+V3.3.2
+    * No changes
+
+V3.3.1
+    * Changes:
+        * ``add_system``: Parameter ``check_for_duplicate_netinfo`` was removed
+        * ``build_iso``: Replaced default ``None`` arguments with typed arguments
+        * ``create_grub_images``: Renamed to ``mkloaders``
+
+V3.3.0
+    * Added:
+        * ``menus``
+        * ``copy_menu``
+        * ``remove_menu``
+        * ``rename_menu``
+        * ``new_menu``
+        * ``add_menu``
+        * ``find_menu``
+        * ``get_menus_since``
+        * ``sync_systems``
+        * ``sync_dns``
+        * ``get_valid_obj_boot_loaders``
+        * ``create_grub_images``
+    * Changed:
+        * Constructor: Added ``settingsfile_location`` and ``execute_settings_automigration`` as parameters
+        * ``find_items``: Accept an empty ``str`` for ``what`` if the argument ``name`` is given.
+        * ``dump_vars``: Parameter ``format`` was renamed to ``formatted_output``
+        * ``generate_gpxe``: Renamed to ``generate_ipxe``; The second parameter is now ``image`` and accepts the name
+          of one.
+        * ``sync``: Accepts a new parameter called ``what`` which is a ``List[str]`` that signals what should be
+          synced. An empty list signals a full sync.
+        * ``sync_dhcp``: Parameter ``verbose`` was removed
+    * Removed:
+        * The ``logger`` arugment was removed from all methods
+        * ``dlcontent``
+
+V3.2.2
+    * No changes
+
+V3.2.1
+    * Added primitive type annotations for all parameters of all methods
+
+V3.2.0
+    * No changes
+
+V3.1.2
+    * No changes
+
+V3.1.1
+    * No changes
+
+V3.1.0
+    * No changes
+
+V3.0.1
+    * No changes
+
+V3.0.0
+    * Added:
+        * power_system: Replaces power_on, power_off, reboot, power_status
+    * Changed:
+        * import_tree: ``kickstart_file`` is now called ``autoinstall_file``
+    * Removed:
+        * ``update``
+        * ``clear``
+        * ``deserialize_raw``
+        * ``deserialize_item_raw``
+        * ``power_on`` - Replaced by power_system
+        * ``power_off`` - Replaced by power_system
+        * ``reboot`` - Replaced by power_system
+        * ``power_status`` - Replaced by power_system
+
+V2.8.5
+    * Inital tracking of changes.
+
 """
+
+# SPDX-License-Identifier: GPL-2.0-or-later
+# SPDX-FileCopyrightText: Copyright 2006-2009, Red Hat, Inc and Others
+# SPDX-FileCopyrightText: Michael DeHaan <michael.dehaan AT gmail>
 
 import logging
 import os
@@ -26,25 +122,11 @@ import tempfile
 import threading
 from configparser import ConfigParser
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from types import ModuleType
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
-from schema import SchemaError
+from schema import SchemaError  # type: ignore
 
-from cobbler import validate
-from cobbler.actions import (
-    status,
-    hardlink,
-    sync,
-    replicate,
-    report,
-    log,
-    acl,
-    check,
-    reposync,
-    mkloaders,
-)
-from cobbler.actions.buildiso.standalone import StandaloneBuildiso
-from cobbler.actions.buildiso.netboot import NetbootBuildiso
 from cobbler import (
     autoinstall_manager,
     autoinstallgen,
@@ -52,23 +134,49 @@ from cobbler import (
     enums,
     module_loader,
     power_manager,
+    settings,
+    tftpgen,
+    utils,
+    validate,
+    yumgen,
 )
-from cobbler import settings, tftpgen, utils, yumgen
+from cobbler.actions import (
+    acl,
+    check,
+    hardlink,
+    importer,
+    log,
+    mkloaders,
+    replicate,
+    reposync,
+    status,
+)
+from cobbler.actions import sync as sync_module
+from cobbler.actions.buildiso.netboot import NetbootBuildiso
+from cobbler.actions.buildiso.standalone import StandaloneBuildiso
+from cobbler.cexceptions import CX
 from cobbler.cobbler_collections import manager
-from cobbler.items import (
-    distro,
-    file,
-    image,
-    menu,
-    mgmtclass,
-    package,
-    profile,
-    repo,
-    system,
-)
+from cobbler.decorator import InheritableDictProperty, InheritableProperty
+from cobbler.items import distro
+from cobbler.items import image as image_module
+from cobbler.items import menu
+from cobbler.items import profile as profile_module
+from cobbler.items import repo
+from cobbler.items import system as system_module
+from cobbler.items.abstract import bootable_item as item_base
+from cobbler.items.abstract.inheritable_item import InheritableItem
+from cobbler.utils import filesystem_helpers, input_converters, signatures
 
-# FIXME: add --quiet depending on if not --verbose?
-RSYNC_CMD = "rsync -a %s '%s' %s --progress"
+if TYPE_CHECKING:
+    from cobbler.cobbler_collections.collection import FIND_KWARGS, ITEM, Collection
+    from cobbler.cobbler_collections.distros import Distros
+    from cobbler.cobbler_collections.images import Images
+    from cobbler.cobbler_collections.menus import Menus
+    from cobbler.cobbler_collections.profiles import Profiles
+    from cobbler.cobbler_collections.repos import Repos
+    from cobbler.cobbler_collections.systems import Systems
+    from cobbler.items.abstract.base_item import BaseItem
+    from cobbler.items.abstract.bootable_item import BootableItem
 
 
 # notes on locking:
@@ -84,7 +192,7 @@ class CobblerAPI:
     Cli apps and daemons should import api.py, and no other Cobbler code.
     """
 
-    __shared_state = {}
+    __shared_state: Dict[str, Any] = {}
     __has_loaded = False
 
     def __init__(
@@ -103,6 +211,7 @@ class CobblerAPI:
         # FIXME: this should be switchable through some simple system
 
         self.__dict__ = CobblerAPI.__shared_state
+        self.mtime_location = "/var/lib/cobbler/.mtime"
         self.perms_ok = False
         if not CobblerAPI.__has_loaded:
             # NOTE: we do not log all API actions, because a simple CLI invocation may call adds and such to load the
@@ -128,7 +237,8 @@ class CobblerAPI:
             CobblerAPI.__has_loaded = True
 
             # load the modules first, or nothing else works...
-            module_loader.load_modules()
+            self.module_loader = module_loader.ModuleLoader(self)
+            self.module_loader.load_modules()
 
             # In case the signatures can't be loaded, we can't validate distros etc. Thus, the raised exception should
             # not be caught.
@@ -150,33 +260,56 @@ class CobblerAPI:
             self.autoinstallgen = autoinstallgen.AutoInstallationGen(self)
             self.yumgen = yumgen.YumGen(self)
             self.tftpgen = tftpgen.TFTPGen(self)
-            self.power_mgr = power_manager.PowerManager(self)
+            self.__directory_startup_preparations()
             self.logger.debug("API handle initialized")
             self.perms_ok = True
 
-    def __load_signatures(self):
+    def __directory_startup_preparations(self) -> None:
+        """
+        This function prepares the daemon to be able to operate with directories that need to be handled before it can
+        operate as designed.
+
+        :raises FileNotFoundError: In case a directory required for operation is missing.
+        """
+        self.logger.debug("Creating necessary directories")
+        required_directories = [
+            pathlib.Path("/var/lib/cobbler"),
+            pathlib.Path("/etc/cobbler"),
+            pathlib.Path(self.settings().webdir),
+            pathlib.Path(self.settings().tftpboot_location),
+        ]
+        for directory in required_directories:
+            if not directory.is_dir():
+                directory.mkdir()
+                self.logger.info('Created required directory: "%s"', str(directory))
+        filesystem_helpers.create_tftpboot_dirs(self)
+        filesystem_helpers.create_web_dirs(self)
+        filesystem_helpers.create_trigger_dirs(self)
+        filesystem_helpers.create_json_database_dirs(self)
+
+    def __load_signatures(self) -> None:
         try:
-            utils.load_signatures(self.settings().signature_path)
-        except Exception as e:
+            signatures.load_signatures(self.settings().signature_path)
+        except Exception as exception:
             self.logger.error(
-                "Failed to load signatures from %s: %s",
+                'Failed to load signatures from "%s"',
                 self.settings().signature_path,
-                exc_info=e,
+                exc_info=exception,
             )
-            raise e
+            raise exception
 
         self.logger.info(
             "%d breeds and %d OS versions read from the signature file",
-            len(utils.get_valid_breeds()),
-            len(utils.get_valid_os_versions()),
+            len(signatures.get_valid_breeds()),
+            len(signatures.get_valid_os_versions()),
         )
 
     def __generate_settings(
         self, settings_path: Path, execute_settings_automigration: bool = False
     ) -> settings.Settings:
-        yaml_dict = settings.read_yaml_file(settings_path)
+        yaml_dict = settings.read_yaml_file(str(settings_path))
 
-        if execute_settings_automigration is not None:
+        if execute_settings_automigration is not None:  # type: ignore
             self.logger.info(
                 'Daemon flag overwriting other possible values from "settings.yaml" for automigration!'
             )
@@ -202,7 +335,7 @@ class CobblerAPI:
         if yaml_dict.get("auto_migrate_settings", False):
             # save to disk only when automigration was performed
             # to avoid creating duplicated files
-            new_settings.save(settings_path)
+            new_settings.save(str(settings_path))
 
         # Return object
         return new_settings
@@ -240,18 +373,22 @@ class CobblerAPI:
         :returns: 0 if there is no file where the information required for this method is saved.
         """
         # FIXME: This fails in case the file required is not available
-        if not os.path.exists("/var/lib/cobbler/.mtime"):
-            fd = open("/var/lib/cobbler/.mtime", "w")
-            fd.write("0")
-            fd.close()
-            return float(0)
-        fd = open("/var/lib/cobbler/.mtime", "r")
-        data = fd.read().strip()
+        if not os.path.exists(self.mtime_location):
+            with open(self.mtime_location, "w", encoding="UTF-8") as mtime_fd:
+                mtime_fd.write("0")
+            return 0.0
+        with open(self.mtime_location, "r", encoding="UTF-8") as mtime_fd:
+            data = mtime_fd.read().strip()
         return float(data)
 
     # ==========================================================
 
-    def log(self, msg: str, args=None, debug: bool = False):
+    def log(
+        self,
+        msg: str,
+        args: Optional[Union[str, List[Optional[str]], Dict[str, Any]]] = None,
+        debug: bool = False,
+    ) -> None:
         """
         Logs a message with the already initiated logger of this object.
 
@@ -275,7 +412,7 @@ class CobblerAPI:
 
     def version(
         self, extended: bool = False
-    ) -> Union[float, Dict[str, Union[str, list]]]:
+    ) -> Union[float, Dict[str, Union[str, List[Any]]]]:
         """
         What version is Cobbler?
 
@@ -292,16 +429,18 @@ class CobblerAPI:
         """
         config = ConfigParser()
         config.read("/etc/cobbler/version")
-        data: Dict[str, Union[str, list]] = {
+        data: Dict[str, Union[str, List[Any]]] = {
             "gitdate": config.get("cobbler", "gitdate"),
             "gitstamp": config.get("cobbler", "gitstamp"),
             "builddate": config.get("cobbler", "builddate"),
             "version": config.get("cobbler", "version"),
             "version_tuple": [],
         }
-        # dont actually read the version_tuple from the version file
-        for num in data["version"].split("."):
-            data["version_tuple"].append(int(num))
+        # don't actually read the version_tuple from the version file
+        # mypy doesn't know that version the version key is controlled by us and we thus can safely assume that this
+        # is a str
+        for num in data["version"].split("."):  # type: ignore[union-attr]
+            data["version_tuple"].append(int(num))  # type: ignore[union-attr]
 
         if not extended:
             # for backwards compatibility and use with koan's comparisons
@@ -313,12 +452,36 @@ class CobblerAPI:
                     int(elems[0]) + 0.1 * int(elems[1]) + 0.001 * int(elems[2]), ".3f"
                 )
             )
+        return data
+
+    # ==========================================================================
+
+    def clean_items_cache(self, obj: Union[settings.Settings, Dict[str, Any]]):
+        """
+        Items cache invalidation in case of settings or singatures changes.
+        Cobbler internal use only.
+        """
+        if obj is None or isinstance(obj, settings.Settings):  # type: ignore
+            item_types = [
+                "repo",
+                "distro",
+                "menu",
+                "image",
+                "profile",
+                "system",
+            ]
+        elif obj == self.get_signatures():
+            item_types = ["distro", "image", "profile", "system"]
         else:
-            return data
+            raise CX(f"Wrong object type {type(obj)} for cache invalidation!")
+
+        for item_type in item_types:
+            for item_obj in self.get_items(item_type):
+                item_obj.cache.set_dict_cache(None, True)
 
     # ==========================================================
 
-    def get_item(self, what: str, name: str):
+    def get_item(self, what: str, name: str) -> Optional["BootableItem"]:
         """
         Get a general item.
 
@@ -327,10 +490,10 @@ class CobblerAPI:
         :return: An item of the desired type.
         """
         # self.log("get_item", [what, name], debug=True)
-        item = self._collection_mgr.get_items(what).get(name)
-        return item
+        result = self._collection_mgr.get_items(what).get(name)
+        return result  # type: ignore
 
-    def get_items(self, what: str):
+    def get_items(self, what: str) -> "Collection[BaseItem]":
         """
         Get all items of a collection.
 
@@ -341,69 +504,88 @@ class CobblerAPI:
         items = self._collection_mgr.get_items(what)
         return items
 
-    def distros(self):
+    def distros(self) -> "Distros":
         """
         Return the current list of distributions
         """
-        return self.get_items("distro")
+        return self._collection_mgr.distros()
 
-    def profiles(self):
+    def profiles(self) -> "Profiles":
         """
         Return the current list of profiles
         """
-        return self.get_items("profile")
+        return self._collection_mgr.profiles()
 
-    def systems(self):
+    def systems(self) -> "Systems":
         """
         Return the current list of systems
         """
-        return self.get_items("system")
+        return self._collection_mgr.systems()
 
-    def repos(self):
+    def repos(self) -> "Repos":
         """
         Return the current list of repos
         """
-        return self.get_items("repo")
+        return self._collection_mgr.repos()
 
-    def images(self):
+    def images(self) -> "Images":
         """
         Return the current list of images
         """
-        return self.get_items("image")
+        return self._collection_mgr.images()
 
-    def settings(self):
+    def settings(self) -> "settings.Settings":
         """
         Return the application configuration
         """
         return self._settings
 
-    def mgmtclasses(self):
-        """
-        Return the current list of mgmtclasses
-        """
-        return self.get_items("mgmtclass")
-
-    def packages(self):
-        """
-        Return the current list of packages
-        """
-        return self.get_items("package")
-
-    def files(self):
-        """
-        Return the current list of files
-        """
-        return self.get_items("file")
-
-    def menus(self):
+    def menus(self) -> "Menus":
         """
         Return the current list of menus
         """
-        return self.get_items("menu")
+        return self._collection_mgr.menus()
 
     # =======================================================================
 
-    def get_item_resolved_value(self, item_uuid: str, attribute: str):
+    def __item_resolved_helper(self, item_uuid: str, attribute: str) -> "BaseItem":
+        """
+        This helper validates the common data for ``*_item_resolved_value``.
+
+        :param item_uuid: The uuid for the item.
+        :param attribute: The attribute name that is requested.
+        :returns: The desired item to further process.
+        :raises TypeError: If ``item_uuid`` or ``attribute`` are not a str.
+        :raises ValueError: In case the uuid was invalid or the requested item did not exist.
+        :raises AttributeError: In case the attribute did not exist on the item that was requested.
+        """
+        if not isinstance(item_uuid, str):  # type: ignore
+            raise TypeError("item_uuid must be of type str!")
+
+        if not validate.validate_uuid(item_uuid):
+            raise ValueError("The given uuid did not have the correct format!")
+
+        if not isinstance(attribute, str):  # type: ignore
+            raise TypeError("attribute must be of type str!")
+
+        # We pass return_list=False, thus the return type is Optional[ITEM]
+        desired_item = self.find_items(
+            "", {"uid": item_uuid}, return_list=False, no_errors=True
+        )
+        if desired_item is None:
+            raise ValueError(f'Item with item_uuid "{item_uuid}" did not exist!')
+
+        if isinstance(desired_item, list):
+            raise ValueError("Ambiguous match during searching for resolved item!")
+
+        if not hasattr(desired_item, attribute):
+            raise AttributeError(
+                f'Attribute "{attribute}" did not exist on item type "{desired_item.TYPE_NAME}".'
+            )
+
+        return desired_item
+
+    def get_item_resolved_value(self, item_uuid: str, attribute: str) -> Any:
         """
         This method helps non Python API consumers to retrieve the final data of a field with inheritance.
 
@@ -417,32 +599,94 @@ class CobblerAPI:
         :raises AttributeError: In case the attribute specified is not available on the given item (type).
         :returns: The attribute value. Since this might be of type NetworkInterface we cannot yet set this explicitly.
         """
-        if not isinstance(item_uuid, str):
-            raise TypeError("item_uuid must be of type str!")
-
-        if not validate.validate_uuid(item_uuid):
-            raise ValueError("The given uuid did not have the correct format!")
-
-        if not isinstance(attribute, str):
-            raise TypeError("attribute must be of type str!")
-
-        desired_item = self.find_items(
-            "", {"uid": item_uuid}, return_list=False, no_errors=True
-        )
-        if desired_item is None:
-            raise ValueError('Item with item_uuid "%s" did not exist!' % item_uuid)
-
-        if not hasattr(desired_item, attribute):
-            raise AttributeError(
-                'Attribute "%s" did not exist on item type "%s".'
-                % (attribute, desired_item.TYPE_NAME)
-            )
+        desired_item = self.__item_resolved_helper(item_uuid, attribute)
 
         return getattr(desired_item, attribute)
 
+    def set_item_resolved_value(
+        self, item_uuid: str, attribute: str, value: Any
+    ) -> None:
+        """
+        This method helps non Python API consumers to use the Python property setters without having access to the raw
+        data of the object. In case you pass a dictionary the method tries to deduplicate it.
+
+        This does not help with network interfaces because they don't have a UUID at the moment and thus can't be
+        queried via their UUID.
+
+        .. warning:: This function may throw any exception that is thrown by a setter of a Python property defined in
+                     Cobbler.
+
+        :param item_uuid: The UUID of the item that should be retrieved.
+        :param attribute: The attribute that should be retrieved.
+        :param value: The new value to set.
+        :raises ValueError: In case a value given was either malformed or the desired item did not exist.
+        :raises TypeError: In case the type of the method arguments do have the wrong type.
+        :raises AttributeError: In case the attribute specified is not available on the given item (type).
+        """
+        desired_item = self.__item_resolved_helper(item_uuid, attribute)
+        property_object_of_attribute = getattr(type(desired_item), attribute)
+        # Check if value can be inherited or not
+        if "inheritable" not in dir(property_object_of_attribute):
+            if value == enums.VALUE_INHERITED:
+                raise ValueError(
+                    "<<inherit>> not allowed for non-inheritable properties."
+                )
+            setattr(desired_item, attribute, value)
+            return
+        if isinstance(property_object_of_attribute, InheritableDictProperty):
+            # Deduplicate dictionaries
+            if isinstance(desired_item, InheritableItem):
+                parent_item = desired_item.logical_parent
+                if hasattr(parent_item, attribute):
+                    parent_value = getattr(parent_item, attribute)
+                    dict_value = input_converters.input_string_or_dict(value)
+                    if isinstance(dict_value, str):
+                        # This can only be the inherited case
+                        dict_value = enums.VALUE_INHERITED
+                    else:
+                        for key in parent_value:
+                            if (
+                                key in dict_value
+                                and key in parent_value
+                                and dict_value[key] == parent_value[key]
+                            ):
+                                dict_value.pop(key)
+                    setattr(desired_item, attribute, dict_value)
+                    return
+            else:
+                # Value can only be coming from settings?
+                raise ValueError(
+                    "Deduplication of dictionaries not supported for Items not inheriting from InheritableItem!"
+                )
+        if isinstance(property_object_of_attribute, InheritableProperty) and isinstance(
+            getattr(desired_item, attribute), list
+        ):
+            # Deduplicate lists
+            if isinstance(desired_item, InheritableItem):
+                parent_item = desired_item.logical_parent
+                if hasattr(parent_item, attribute):
+                    parent_value = getattr(parent_item, attribute)
+                    list_value = input_converters.input_string_or_list(value)
+                    if isinstance(list_value, str):
+                        # This can only be the inherited case
+                        list_value = enums.VALUE_INHERITED
+                    else:
+                        for item in parent_value:
+                            if item in list_value:
+                                list_value.remove(item)
+                    setattr(desired_item, attribute, list_value)
+                    return
+            else:
+                # Value can only be coming from settings?
+                raise ValueError(
+                    "Deduplication of dictionaries not supported for Items not inheriting from InheritableItem!"
+                )
+        # Use property setter
+        setattr(desired_item, attribute, value)
+
     # =======================================================================
 
-    def copy_item(self, what: str, ref, newname: str):
+    def copy_item(self, what: str, ref: "BaseItem", newname: str) -> None:
         """
         General copy method which is called by the specific methods.
 
@@ -450,100 +694,74 @@ class CobblerAPI:
         :param ref: The object itself which gets copied.
         :param newname: The new name of the newly created object.
         """
-        self.log("copy_item(%s)" % what, [ref.name, newname])
-        self.get_items(what).copy(ref, newname)
+        self.log(f"copy_item({what})", [ref.name, newname])
+        self.get_items(what).copy(ref, newname)  # type: ignore
 
-    def copy_distro(self, ref, newname: str):
+    def copy_distro(self, ref: "distro.Distro", newname: str) -> None:
         """
         This method copies a distro which is just different in the name of the object.
 
         :param ref: The object itself which gets copied.
         :param newname: The new name of the newly created object.
         """
-        self.copy_item("distro", ref, newname)
+        self._collection_mgr.distros().copy(ref, newname)
 
-    def copy_profile(self, ref, newname: str):
+    def copy_profile(self, ref: "profile_module.Profile", newname: str) -> None:
         """
         This method copies a profile which is just different in the name of the object.
 
         :param ref: The object itself which gets copied.
         :param newname: The new name of the newly created object.
         """
-        self.copy_item("profile", ref, newname)
+        self._collection_mgr.profiles().copy(ref, newname)
 
-    def copy_system(self, ref, newname: str):
+    def copy_system(self, ref: "system_module.System", newname: str) -> None:
         """
         This method copies a system which is just different in the name of the object.
 
         :param ref: The object itself which gets copied.
         :param newname: The new name of the newly created object.
         """
-        self.copy_item("system", ref, newname)
+        self._collection_mgr.systems().copy(ref, newname)
 
-    def copy_repo(self, ref, newname: str):
+    def copy_repo(self, ref: "repo.Repo", newname: str) -> None:
         """
         This method copies a repository which is just different in the name of the object.
 
         :param ref: The object itself which gets copied.
         :param newname: The new name of the newly created object.
         """
-        self.copy_item("repo", ref, newname)
+        self._collection_mgr.repos().copy(ref, newname)
 
-    def copy_image(self, ref, newname: str):
+    def copy_image(self, ref: "image_module.Image", newname: str) -> None:
         """
         This method copies an image which is just different in the name of the object.
 
         :param ref: The object itself which gets copied.
         :param newname: The new name of the newly created object.
         """
-        self.copy_item("image", ref, newname)
+        self._collection_mgr.images().copy(ref, newname)
 
-    def copy_mgmtclass(self, ref, newname: str):
-        """
-        This method copies a management class which is just different in the name of the object.
-
-        :param ref: The object itself which gets copied.
-        :param newname: The new name of the newly created object.
-        """
-        self.copy_item("mgmtclass", ref, newname)
-
-    def copy_package(self, ref, newname: str):
-        """
-        This method copies a package which is just different in the name of the object.
-
-        :param ref: The object itself which gets copied.
-        :param newname: The new name of the newly created object.
-        """
-        self.copy_item("package", ref, newname)
-
-    def copy_file(self, ref, newname: str):
+    def copy_menu(self, ref: "menu.Menu", newname: str) -> None:
         """
         This method copies a file which is just different in the name of the object.
 
         :param ref: The object itself which gets copied.
         :param newname: The new name of the newly created object.
         """
-        self.copy_item("file", ref, newname)
-
-    def copy_menu(self, ref, newname: str):
-        """
-        This method copies a file which is just different in the name of the object.
-
-        :param ref: The object itself which gets copied.
-        :param newname: The new name of the newly created object.
-        """
-        self.copy_item("menu", ref, newname)
+        self._collection_mgr.menus().copy(ref, newname)
 
     # ==========================================================================
 
     def remove_item(
         self,
         what: str,
-        ref,
+        ref: Union["BaseItem", str],
         recursive: bool = False,
         delete: bool = True,
         with_triggers: bool = True,
-    ):
+        with_sync: bool = True,
+    ) -> None:
         """
         Remove a general item. This method should not be used by an external api. Please use the specific
         remove_<itemtype> methods.
@@ -553,27 +771,32 @@ class CobblerAPI:
         :param recursive: If the item should recursively should delete dependencies on itself.
         :param delete: Not known what this parameter does exactly.
         :param with_triggers: Whether you would like to have the removal triggers executed or not.
+        :param with_sync: In case a Cobbler Sync should be executed after the action.
         """
-        if isinstance(what, str):
-            if isinstance(ref, str):
-                ref = self.get_item(what, ref)
-                if ref is None:
-                    return  # nothing to remove
-        self.log("remove_item(%s)" % what, [ref.name])
+        to_delete: Optional["BaseItem"] = None
+        if isinstance(ref, str):
+            to_delete = self.get_item(what, ref)
+            if to_delete is None:
+                return  # nothing to remove
+        else:
+            to_delete = ref
+        self.log(f"remove_item({what})", [to_delete.name])
         self.get_items(what).remove(
-            ref.name,
+            to_delete.name,
             recursive=recursive,
             with_delete=delete,
             with_triggers=with_triggers,
+            with_sync=with_sync,
         )
 
     def remove_distro(
         self,
-        ref,
+        ref: Union["distro.Distro", str],
         recursive: bool = False,
         delete: bool = True,
         with_triggers: bool = True,
-    ):
+        with_sync: bool = True,
+    ) -> None:
         """
         Remove a distribution from Cobbler.
 
@@ -581,6 +804,7 @@ class CobblerAPI:
         :param recursive: If the item should recursively should delete dependencies on itself.
         :param delete: Not known what this parameter does exactly.
         :param with_triggers: Whether you would like to have the removal triggers executed or not.
+        :param with_sync: In case a Cobbler Sync should be executed after the action.
         """
         self.remove_item(
             "distro",
@@ -588,15 +812,17 @@ class CobblerAPI:
             recursive=recursive,
             delete=delete,
             with_triggers=with_triggers,
+            with_sync=with_sync,
         )
 
     def remove_profile(
         self,
-        ref,
+        ref: Union["profile_module.Profile", str],
         recursive: bool = False,
         delete: bool = True,
         with_triggers: bool = True,
-    ):
+        with_sync: bool = True,
+    ) -> None:
         """
         Remove a profile from Cobbler.
 
@@ -604,6 +830,7 @@ class CobblerAPI:
         :param recursive: If the item should recursively should delete dependencies on itself.
         :param delete: Not known what this parameter does exactly.
         :param with_triggers: Whether you would like to have the removal triggers executed or not.
+        :param with_sync: In case a Cobbler Sync should be executed after the action.
         """
         self.remove_item(
             "profile",
@@ -611,15 +838,17 @@ class CobblerAPI:
             recursive=recursive,
             delete=delete,
             with_triggers=with_triggers,
+            with_sync=with_sync,
         )
 
     def remove_system(
         self,
-        ref,
+        ref: Union["system_module.System", str],
         recursive: bool = False,
         delete: bool = True,
         with_triggers: bool = True,
-    ):
+        with_sync: bool = True,
+    ) -> None:
         """
         Remove a system from Cobbler.
 
@@ -627,6 +856,7 @@ class CobblerAPI:
         :param recursive: If the item should recursively should delete dependencies on itself.
         :param delete: Not known what this parameter does exactly.
         :param with_triggers: Whether you would like to have the removal triggers executed or not.
+        :param with_sync: In case a Cobbler Sync should be executed after the action.
         """
         self.remove_item(
             "system",
@@ -634,15 +864,17 @@ class CobblerAPI:
             recursive=recursive,
             delete=delete,
             with_triggers=with_triggers,
+            with_sync=with_sync,
         )
 
     def remove_repo(
         self,
-        ref,
+        ref: Union["repo.Repo", str],
         recursive: bool = False,
         delete: bool = True,
         with_triggers: bool = True,
-    ):
+        with_sync: bool = True,
+    ) -> None:
         """
         Remove a repository from Cobbler.
 
@@ -650,18 +882,25 @@ class CobblerAPI:
         :param recursive: If the item should recursively should delete dependencies on itself.
         :param delete: Not known what this parameter does exactly.
         :param with_triggers: Whether you would like to have the removal triggers executed or not.
+        :param with_sync: In case a Cobbler Sync should be executed after the action.
         """
         self.remove_item(
-            "repo", ref, recursive=recursive, delete=delete, with_triggers=with_triggers
+            "repo",
+            ref,
+            recursive=recursive,
+            delete=delete,
+            with_triggers=with_triggers,
+            with_sync=with_sync,
         )
 
     def remove_image(
         self,
-        ref,
+        ref: Union["image_module.Image", str],
         recursive: bool = False,
         delete: bool = True,
         with_triggers: bool = True,
-    ):
+        with_sync: bool = True,
+    ) -> None:
         """
         Remove a image from Cobbler.
 
@@ -669,6 +908,7 @@ class CobblerAPI:
         :param recursive: If the item should recursively should delete dependencies on itself.
         :param delete: Not known what this parameter does exactly.
         :param with_triggers: Whether you would like to have the removal triggers executed or not.
+        :param with_sync: In case a Cobbler Sync should be executed after the action.
         """
         self.remove_item(
             "image",
@@ -676,74 +916,17 @@ class CobblerAPI:
             recursive=recursive,
             delete=delete,
             with_triggers=with_triggers,
+            with_sync=with_sync,
         )
 
-    def remove_mgmtclass(
+    def remove_menu(
         self,
-        ref,
+        ref: Union["menu.Menu", str],
         recursive: bool = False,
         delete: bool = True,
         with_triggers: bool = True,
-    ):
-        """
-        Remove a management class from Cobbler.
-
-        :param ref: The internal unique handle for the item.
-        :param recursive: If the item should recursively should delete dependencies on itself.
-        :param delete: Not known what this parameter does exactly.
-        :param with_triggers: Whether you would like to have the removal triggers executed or not.
-        """
-        self.remove_item(
-            "mgmtclass",
-            ref,
-            recursive=recursive,
-            delete=delete,
-            with_triggers=with_triggers,
-        )
-
-    def remove_package(
-        self,
-        ref,
-        recursive: bool = False,
-        delete: bool = True,
-        with_triggers: bool = True,
-    ):
-        """
-        Remove a package from Cobbler.
-
-        :param ref: The internal unique handle for the item.
-        :param recursive: If the item should recursively should delete dependencies on itself.
-        :param delete: Not known what this parameter does exactly.
-        :param with_triggers: Whether you would like to have the removal triggers executed or not.
-        """
-        self.remove_item(
-            "package",
-            ref,
-            recursive=recursive,
-            delete=delete,
-            with_triggers=with_triggers,
-        )
-
-    def remove_file(
-        self,
-        ref,
-        recursive: bool = False,
-        delete: bool = True,
-        with_triggers: bool = True,
-    ):
-        """
-        Remove a file from Cobbler.
-
-        :param ref: The internal unique handle for the item.
-        :param recursive: If the item should recursively should delete dependencies on itself.
-        :param delete: Not known what this parameter does exactly.
-        :param with_triggers: Whether you would like to have the removal triggers executed or not.
-        """
-        self.remove_item(
-            "file", ref, recursive=recursive, delete=delete, with_triggers=with_triggers
-        )
-
-    def remove_menu(self, ref, recursive=False, delete=True, with_triggers=True):
+        with_sync: bool = True,
+    ) -> None:
         """
         Remove a menu from Cobbler.
 
@@ -751,14 +934,20 @@ class CobblerAPI:
         :param recursive: If the item should recursively should delete dependencies on itself.
         :param delete: Not known what this parameter does exactly.
         :param with_triggers: Whether you would like to have the removal triggers executed or not.
+        :param with_sync: In case a Cobbler Sync should be executed after the action.
         """
         self.remove_item(
-            "menu", ref, recursive=recursive, delete=delete, with_triggers=with_triggers
+            "menu",
+            ref,
+            recursive=recursive,
+            delete=delete,
+            with_triggers=with_triggers,
+            with_sync=with_sync,
         )
 
     # ==========================================================================
 
-    def rename_item(self, what: str, ref, newname: str):
+    def rename_item(self, what: str, ref: "BaseItem", newname: str) -> None:
         """
         Remove a general item. This method should not be used by an external api. Please use the specific
         rename_<itemtype> methods.
@@ -767,10 +956,10 @@ class CobblerAPI:
         :param ref: The internal unique handle for the item.
         :param newname: The new name for the item.
         """
-        self.log("rename_item(%s)" % what, [ref.name, newname])
-        self.get_items(what).rename(ref, newname)
+        self.log(f"rename_item({what})", [ref.name, newname])
+        self.get_items(what).rename(ref, newname)  # type: ignore
 
-    def rename_distro(self, ref, newname: str):
+    def rename_distro(self, ref: "distro.Distro", newname: str) -> None:
         """
         Rename a distro to a new name.
 
@@ -779,7 +968,7 @@ class CobblerAPI:
         """
         self.rename_item("distro", ref, newname)
 
-    def rename_profile(self, ref, newname: str):
+    def rename_profile(self, ref: "profile_module.Profile", newname: str) -> None:
         """
         Rename a profile to a new name.
 
@@ -788,7 +977,7 @@ class CobblerAPI:
         """
         self.rename_item("profile", ref, newname)
 
-    def rename_system(self, ref, newname: str):
+    def rename_system(self, ref: "system_module.System", newname: str) -> None:
         """
         Rename a system to a new name.
 
@@ -797,7 +986,7 @@ class CobblerAPI:
         """
         self.rename_item("system", ref, newname)
 
-    def rename_repo(self, ref, newname: str):
+    def rename_repo(self, ref: "repo.Repo", newname: str) -> None:
         """
         Rename a repository to a new name.
 
@@ -806,7 +995,7 @@ class CobblerAPI:
         """
         self.rename_item("repo", ref, newname)
 
-    def rename_image(self, ref, newname: str):
+    def rename_image(self, ref: "image_module.Image", newname: str) -> None:
         """
         Rename an image to a new name.
 
@@ -815,34 +1004,7 @@ class CobblerAPI:
         """
         self.rename_item("image", ref, newname)
 
-    def rename_mgmtclass(self, ref, newname: str):
-        """
-        Rename a management class to a new name.
-
-        :param ref: The internal unique handle for the item.
-        :param newname: The new name for the item.
-        """
-        self.rename_item("mgmtclass", ref, newname)
-
-    def rename_package(self, ref, newname: str):
-        """
-        Rename a package to a new name.
-
-        :param ref: The internal unique handle for the item.
-        :param newname: The new name for the item.
-        """
-        self.rename_item("package", ref, newname)
-
-    def rename_file(self, ref, newname: str):
-        """
-        Rename a file to a new name.
-
-        :param ref: The internal unique handle for the item.
-        :param newname: The new name for the item.
-        """
-        self.rename_item("file", ref, newname)
-
-    def rename_menu(self, ref, newname: str):
+    def rename_menu(self, ref: "menu.Menu", newname: str) -> None:
         """
         Rename a menu to a new name.
 
@@ -853,20 +1015,37 @@ class CobblerAPI:
 
     # ==========================================================================
 
-    # FIXME: add a new_item method
+    def new_item(
+        self, what: str = "", is_subobject: bool = False, **kwargs: Any
+    ) -> "BootableItem":
+        """
+        Creates a new (unconfigured) object. The object is not persisted.
 
-    def new_distro(self, is_subobject: bool = False):
+        :param what: Specifies the type of object. Valid item types can be seen at
+                     :func:`~cobbler.enums.ItemTypes`.
+        :param is_subobject: If the object is a subobject of an already existing object or not.
+        :return: The newly created object.
+        """
+        try:
+            enums.ItemTypes(what)  # verify that <what> is an ItemTypes member
+            return getattr(self, f"new_{what}")(is_subobject, **kwargs)
+        except (ValueError, AttributeError) as error:
+            raise Exception(f"internal error, collection name is {what}") from error
+
+    def new_distro(self, is_subobject: bool = False, **kwargs: Any) -> "distro.Distro":
         """
         Returns a new empty distro object. This distro is not automatically persisted. Persistance is achieved via
         ``save()``.
 
-        :param is_subobject: If the object created is a subobject or not.
+        :param is_subobject: If the object is a subobject of an already existing object or not.
         :return: An empty Distro object.
         """
-        self.log("new_distro", [is_subobject])
-        return distro.Distro(self, is_subobject=is_subobject)
+        self.log("new_distro", kwargs)
+        return distro.Distro(self, is_subobject, **kwargs)
 
-    def new_profile(self, is_subobject: bool = False):
+    def new_profile(
+        self, is_subobject: bool = False, **kwargs: Any
+    ) -> "profile_module.Profile":
         """
         Returns a new empty profile object. This profile is not automatically persisted. Persistence is achieved via
         ``save()``.
@@ -874,10 +1053,12 @@ class CobblerAPI:
         :param is_subobject: If the object created is a subobject or not.
         :return: An empty Profile object.
         """
-        self.log("new_profile", [is_subobject])
-        return profile.Profile(self, is_subobject=is_subobject)
+        self.log("new_profile", kwargs)
+        return profile_module.Profile(self, is_subobject, **kwargs)
 
-    def new_system(self, is_subobject: bool = False):
+    def new_system(
+        self, is_subobject: bool = False, **kwargs: Any
+    ) -> "system_module.System":
         """
         Returns a new empty system object. This system is not automatically persisted. Persistence is achieved via
         ``save()``.
@@ -885,10 +1066,10 @@ class CobblerAPI:
         :param is_subobject: If the object created is a subobject or not.
         :return: An empty System object.
         """
-        self.log("new_system", [is_subobject])
-        return system.System(self, is_subobject=is_subobject)
+        self.log("new_system", kwargs)
+        return system_module.System(self, is_subobject, **kwargs)
 
-    def new_repo(self, is_subobject: bool = False):
+    def new_repo(self, is_subobject: bool = False, **kwargs: Any) -> "repo.Repo":
         """
         Returns a new empty repo object. This repository is not automatically persisted. Persistence is achieved via
         ``save()``.
@@ -896,10 +1077,12 @@ class CobblerAPI:
         :param is_subobject: If the object created is a subobject or not.
         :return: An empty repo object.
         """
-        self.log("new_repo", [is_subobject])
-        return repo.Repo(self, is_subobject=is_subobject)
+        self.log("new_repo", kwargs)
+        return repo.Repo(self, is_subobject, kwargs)
 
-    def new_image(self, is_subobject: bool = False):
+    def new_image(
+        self, is_subobject: bool = False, **kwargs: Any
+    ) -> "image_module.Image":
         """
         Returns a new empty image object. This image is not automatically persisted. Persistence is achieved via
         ``save()``.
@@ -907,58 +1090,31 @@ class CobblerAPI:
         :param is_subobject: If the object created is a subobject or not.
         :return: An empty image object.
         """
-        self.log("new_image", [is_subobject])
-        return image.Image(self, is_subobject=is_subobject)
+        self.log("new_image", kwargs)
+        return image_module.Image(self, is_subobject, **kwargs)
 
-    def new_mgmtclass(self, is_subobject: bool = False):
-        """
-        Returns a new empty mgmtclass object. This mgmtclass is not automatically persisted. Persistence is achieved via
-        ``save()``.
-
-        :param is_subobject: If the object created is a subobject or not.
-        :return: An empty mgmtclass object.
-        """
-        self.log("new_mgmtclass", [is_subobject])
-        return mgmtclass.Mgmtclass(self, is_subobject=is_subobject)
-
-    def new_package(self, is_subobject: bool = False):
-        """
-        Returns a new empty package object. This package is not automatically persisted. Persistence is achieved via
-        ``save()``.
-
-        :param is_subobject: If the object created is a subobject or not.
-        :return: An empty Package object.
-        """
-        self.log("new_package", [is_subobject])
-        return package.Package(self, is_subobject=is_subobject)
-
-    def new_file(self, is_subobject: bool = False):
-        """
-        Returns a new empty file object. This file is not automatically persisted. Persistence is achieved via
-        ``save()``.
-
-        :param is_subobject: If the object created is a subobject or not.
-        :return: An empty File object.
-        """
-        self.log("new_file", [is_subobject])
-        return file.File(self, is_subobject=is_subobject)
-
-    def new_menu(self, is_subobject: bool = False):
+    def new_menu(self, is_subobject: bool = False, **kwargs: Any) -> "menu.Menu":
         """
         Returns a new empty menu object. This file is not automatically persisted. Persistence is achieved via
         ``save()``.
 
         :param is_subobject: If the object created is a subobject or not.
-        :return: An empty File object.
+        :return: An empty Menu object.
         """
-        self.log("new_menu", [is_subobject])
-        return menu.Menu(self, is_subobject=is_subobject)
+        self.log("new_menu", kwargs)
+        return menu.Menu(self, is_subobject, **kwargs)
 
     # ==========================================================================
 
     def add_item(
-        self, what: str, ref, check_for_duplicate_names: bool = False, save: bool = True
-    ):
+        self,
+        what: str,
+        ref: "BaseItem",
+        check_for_duplicate_names: bool = False,
+        save: bool = True,
+        with_triggers: bool = True,
+        with_sync: bool = True,
+    ) -> None:
         """
         Add an abstract item to a collection of its specific items. This is not meant for external use. Please reefer
         to one of the specific methods ``add_<type>``.
@@ -967,145 +1123,172 @@ class CobblerAPI:
         :param ref: The identifier for the object to add to a collection.
         :param check_for_duplicate_names: If the name should be unique or can be present multiple times.
         :param save: If the item should be persisted.
+        :param with_triggers: If triggers should be run when the object is added.
+        :param with_sync: In case a Cobbler Sync should be executed after the action.
         """
-        self.log("add_item(%s)" % what, [ref.name])
+        self.log(f"add_item({what})", [ref.name])
         self.get_items(what).add(
-            ref, check_for_duplicate_names=check_for_duplicate_names, save=save
+            ref,  # type: ignore
+            check_for_duplicate_names=check_for_duplicate_names,
+            save=save,
+            with_triggers=with_triggers,
+            with_sync=with_sync,
         )
 
     def add_distro(
-        self, ref, check_for_duplicate_names: bool = False, save: bool = True
-    ):
+        self,
+        ref: "distro.Distro",
+        check_for_duplicate_names: bool = False,
+        save: bool = True,
+        with_triggers: bool = True,
+        with_sync: bool = True,
+    ) -> None:
         """
         Add a distribution to Cobbler.
 
         :param ref: The identifier for the object to add to a collection.
         :param check_for_duplicate_names: If the name should be unique or can be present multiple times.
         :param save: If the item should be persisted.
+        :param with_triggers: If triggers should be run when the object is added.
+        :param with_sync: In case a Cobbler Sync should be executed after the action.
         """
         self.add_item(
             "distro",
             ref,
             check_for_duplicate_names=check_for_duplicate_names,
             save=save,
+            with_triggers=with_triggers,
+            with_sync=with_sync,
         )
 
     def add_profile(
-        self, ref, check_for_duplicate_names: bool = False, save: bool = True
-    ):
+        self,
+        ref: "profile_module.Profile",
+        check_for_duplicate_names: bool = False,
+        save: bool = True,
+        with_triggers: bool = True,
+        with_sync: bool = True,
+    ) -> None:
         """
         Add a profile to Cobbler.
 
         :param ref: The identifier for the object to add to a collection.
         :param check_for_duplicate_names: If the name should be unique or can be present multiple times.
         :param save: If the item should be persisted.
+        :param with_triggers: If triggers should be run when the object is added.
+        :param with_sync: In case a Cobbler Sync should be executed after the action.
         """
         self.add_item(
             "profile",
             ref,
             check_for_duplicate_names=check_for_duplicate_names,
             save=save,
+            with_triggers=with_triggers,
+            with_sync=with_sync,
         )
 
     def add_system(
-        self, ref, check_for_duplicate_names: bool = False, save: bool = True
-    ):
+        self,
+        ref: "system_module.System",
+        check_for_duplicate_names: bool = False,
+        save: bool = True,
+        with_triggers: bool = True,
+        with_sync: bool = True,
+    ) -> None:
         """
         Add a system to Cobbler.
 
         :param ref: The identifier for the object to add to a collection.
         :param check_for_duplicate_names: If the name should be unique or can be present multiple times.
         :param save: If the item should be persisted.
+        :param with_triggers: If triggers should be run when the object is added.
+        :param with_sync: In case a Cobbler Sync should be executed after the action.
         """
         self.add_item(
             "system",
             ref,
             check_for_duplicate_names=check_for_duplicate_names,
             save=save,
+            with_triggers=with_triggers,
+            with_sync=with_sync,
         )
 
-    def add_repo(self, ref, check_for_duplicate_names: bool = False, save: bool = True):
+    def add_repo(
+        self,
+        ref: "repo.Repo",
+        check_for_duplicate_names: bool = False,
+        save: bool = True,
+        with_triggers: bool = True,
+        with_sync: bool = True,
+    ) -> None:
         """
         Add a repository to Cobbler.
 
         :param ref: The identifier for the object to add to a collection.
         :param check_for_duplicate_names: If the name should be unique or can be present multiple times.
         :param save: If the item should be persisted.
+        :param with_triggers: If triggers should be run when the object is added.
+        :param with_sync: In case a Cobbler Sync should be executed after the action.
         """
         self.add_item(
-            "repo", ref, check_for_duplicate_names=check_for_duplicate_names, save=save
+            "repo",
+            ref,
+            check_for_duplicate_names=check_for_duplicate_names,
+            save=save,
+            with_triggers=with_triggers,
+            with_sync=with_sync,
         )
 
     def add_image(
-        self, ref, check_for_duplicate_names: bool = False, save: bool = True
-    ):
+        self,
+        ref: "image_module.Image",
+        check_for_duplicate_names: bool = False,
+        save: bool = True,
+        with_triggers: bool = True,
+        with_sync: bool = True,
+    ) -> None:
         """
         Add an image to Cobbler.
 
         :param ref: The identifier for the object to add to a collection.
         :param check_for_duplicate_names: If the name should be unique or can be present multiple times.
         :param save: If the item should be persisted.
+        :param with_triggers: If triggers should be run when the object is added.
+        :param with_sync: In case a Cobbler Sync should be executed after the action.
         """
         self.add_item(
-            "image", ref, check_for_duplicate_names=check_for_duplicate_names, save=save
-        )
-
-    def add_mgmtclass(
-        self, ref, check_for_duplicate_names: bool = False, save: bool = True
-    ):
-        """
-        Add a management class to Cobbler.
-
-        :param ref: The identifier for the object to add to a collection.
-        :param check_for_duplicate_names: If the name should be unique or can be present multiple times.
-        :param save: If the item should be persisted.
-        """
-        self.add_item(
-            "mgmtclass",
+            "image",
             ref,
             check_for_duplicate_names=check_for_duplicate_names,
             save=save,
+            with_triggers=with_triggers,
+            with_sync=with_sync,
         )
 
-    def add_package(
-        self, ref, check_for_duplicate_names: bool = False, save: bool = True
-    ):
-        """
-        Add a package to Cobbler.
-
-        :param ref: The identifier for the object to add to a collection.
-        :param check_for_duplicate_names: If the name should be unique or can be present multiple times.
-        :param save: If the item should be persisted.
-        """
-        self.add_item(
-            "package",
-            ref,
-            check_for_duplicate_names=check_for_duplicate_names,
-            save=save,
-        )
-
-    def add_file(self, ref, check_for_duplicate_names: bool = False, save: bool = True):
-        """
-        Add a file to Cobbler.
-
-        :param ref: The identifier for the object to add to a collection.
-        :param check_for_duplicate_names: If the name should be unique or can be present multiple times.
-        :param save: If the item should be persisted.
-        """
-        self.add_item(
-            "file", ref, check_for_duplicate_names=check_for_duplicate_names, save=save
-        )
-
-    def add_menu(self, ref, check_for_duplicate_names=False, save=True):
+    def add_menu(
+        self,
+        ref: "menu.Menu",
+        check_for_duplicate_names: bool = False,
+        save: bool = True,
+        with_triggers: bool = True,
+        with_sync: bool = True,
+    ) -> None:
         """
         Add a submenu to Cobbler.
 
         :param ref: The identifier for the object to add to a collection.
         :param check_for_duplicate_names: If the name should be unique or can be present multiple times.
         :param save: If the item should be persisted.
+        :param with_triggers: If triggers should be run when the object is added.
+        :param with_sync: In case a Cobbler Sync should be executed after the action.
         """
         self.add_item(
-            "menu", ref, check_for_duplicate_names=check_for_duplicate_names, save=save
+            "menu",
+            ref,
+            check_for_duplicate_names=check_for_duplicate_names,
+            save=save,
+            with_triggers=with_triggers,
+            with_sync=with_sync,
         )
 
     # ==========================================================================
@@ -1113,11 +1296,11 @@ class CobblerAPI:
     def find_items(
         self,
         what: str = "",
-        criteria: dict = None,
+        criteria: Optional[Dict[Any, Any]] = None,
         name: str = "",
         return_list: bool = True,
         no_errors: bool = False,
-    ):
+    ) -> Optional[Union["BootableItem", List["BootableItem"]]]:
         """
         This is the abstract base method for finding object int the api. It should not be used by external resources.
         Please reefer to the specific implementations of this method called ``find_<object type>``.
@@ -1133,10 +1316,10 @@ class CobblerAPI:
         if criteria is None:
             criteria = {}
 
-        if not isinstance(name, str):
+        if not isinstance(name, str):  # type: ignore
             raise TypeError('"name" must be of type str!')
 
-        if not isinstance(what, str):
+        if not isinstance(what, str):  # type: ignore
             raise TypeError('"what" must be of type str!')
 
         if what != "" and not validate.validate_obj_type(what):
@@ -1151,22 +1334,28 @@ class CobblerAPI:
             )
         return self.__find_without_collection(name, return_list, no_errors, criteria)
 
-    def __find_with_collection(self, what, name, return_list, no_errors, criteria):
+    def __find_with_collection(
+        self,
+        what: str,
+        name: str,
+        return_list: bool,
+        no_errors: bool,
+        criteria: Dict[Any, Any],
+    ) -> Optional[Union["ITEM", List["ITEM"]]]:
         items = self._collection_mgr.get_items(what)
         return items.find(
             name=name, return_list=return_list, no_errors=no_errors, **criteria
-        )
+        )  # type: ignore
 
-    def __find_without_collection(self, name, return_list, no_errors, criteria):
+    def __find_without_collection(
+        self, name: str, return_list: bool, no_errors: bool, criteria: Dict[Any, Any]
+    ) -> Optional[Union["BootableItem", List["BootableItem"]]]:
         collections = [
             "distro",
             "profile",
             "system",
             "repo",
             "image",
-            "mgmtclass",
-            "package",
-            "file",
             "menu",
         ]
         for collection_name in collections:
@@ -1179,14 +1368,15 @@ class CobblerAPI:
             )
             if match is not None:
                 return match
+        return None
 
-    def __find_by_name(self, name: str):
+    def __find_by_name(self, name: str) -> Optional["BootableItem"]:
         """
         This is a magic method which just searches all collections for the specified name directly,
         :param name: The name of the item(s).
         :return: The found item or None.
         """
-        if not isinstance(name, str):
+        if not isinstance(name, str):  # type: ignore
             raise TypeError("name of an object must be of type str!")
         collections = [
             "distro",
@@ -1194,18 +1384,23 @@ class CobblerAPI:
             "system",
             "repo",
             "image",
-            "mgmtclass",
-            "package",
-            "file",
             "menu",
         ]
         for collection_name in collections:
             match = self.find_items(collection_name, name=name, return_list=False)
+            if isinstance(match, list):
+                raise ValueError("Ambiguous match during search!")
             if match is not None:
                 return match
         return None
 
-    def find_distro(self, name: str = "", return_list=False, no_errors=False, **kargs):
+    def find_distro(
+        self,
+        name: str = "",
+        return_list: bool = False,
+        no_errors: bool = False,
+        **kargs: "FIND_KWARGS",
+    ) -> Optional[Union[List["distro.Distro"], "distro.Distro"]]:
         """
         Find a distribution via a name or keys specified in the ``**kargs``.
 
@@ -1219,7 +1414,13 @@ class CobblerAPI:
             name=name, return_list=return_list, no_errors=no_errors, **kargs
         )
 
-    def find_profile(self, name: str = "", return_list=False, no_errors=False, **kargs):
+    def find_profile(
+        self,
+        name: str = "",
+        return_list: bool = False,
+        no_errors: bool = False,
+        **kargs: "FIND_KWARGS",
+    ) -> Optional[Union[List["profile_module.Profile"], "profile_module.Profile"]]:
         """
         Find a profile via a name or keys specified in the ``**kargs``.
 
@@ -1233,7 +1434,13 @@ class CobblerAPI:
             name=name, return_list=return_list, no_errors=no_errors, **kargs
         )
 
-    def find_system(self, name: str = "", return_list=False, no_errors=False, **kargs):
+    def find_system(
+        self,
+        name: str = "",
+        return_list: bool = False,
+        no_errors: bool = False,
+        **kargs: "FIND_KWARGS",
+    ) -> Optional[Union[List["system_module.System"], "system_module.System"]]:
         """
         Find a system via a name or keys specified in the ``**kargs``.
 
@@ -1247,7 +1454,13 @@ class CobblerAPI:
             name=name, return_list=return_list, no_errors=no_errors, **kargs
         )
 
-    def find_repo(self, name: str = "", return_list=False, no_errors=False, **kargs):
+    def find_repo(
+        self,
+        name: str = "",
+        return_list: bool = False,
+        no_errors: bool = False,
+        **kargs: "FIND_KWARGS",
+    ) -> Optional[Union[List["repo.Repo"], "repo.Repo"]]:
         """
         Find a repository via a name or keys specified in the ``**kargs``.
 
@@ -1261,7 +1474,13 @@ class CobblerAPI:
             name=name, return_list=return_list, no_errors=no_errors, **kargs
         )
 
-    def find_image(self, name: str = "", return_list=False, no_errors=False, **kargs):
+    def find_image(
+        self,
+        name: str = "",
+        return_list: bool = False,
+        no_errors: bool = False,
+        **kargs: "FIND_KWARGS",
+    ) -> Optional[Union[List["image_module.Image"], "image_module.Image"]]:
         """
         Find an image via a name or keys specified in the ``**kargs``.
 
@@ -1275,51 +1494,13 @@ class CobblerAPI:
             name=name, return_list=return_list, no_errors=no_errors, **kargs
         )
 
-    def find_mgmtclass(
-        self, name: str = "", return_list=False, no_errors=False, **kargs
-    ):
-        """
-        Find a management class via a name or keys specified in the ``**kargs``.
-
-        :param name: The name to search for.
-        :param return_list: If only the first result or all results should be returned.
-        :param no_errors: Silence some errors which would raise if this turned to False.
-        :param kargs: Additional key-value pairs which may help in finding the desired objects.
-        :return: A single object or a list of all search results.
-        """
-        return self._collection_mgr.mgmtclasses().find(
-            name=name, return_list=return_list, no_errors=no_errors, **kargs
-        )
-
-    def find_package(self, name: str = "", return_list=False, no_errors=False, **kargs):
-        """
-        Find a package via a name or keys specified in the ``**kargs``.
-
-        :param name: The name to search for.
-        :param return_list: If only the first result or all results should be returned.
-        :param no_errors: Silence some errors which would raise if this turned to False.
-        :param kargs: Additional key-value pairs which may help in finding the desired objects.
-        :return: A single object or a list of all search results.
-        """
-        return self._collection_mgr.packages().find(
-            name=name, return_list=return_list, no_errors=no_errors, **kargs
-        )
-
-    def find_file(self, name: str = "", return_list=False, no_errors=False, **kargs):
-        """
-        Find a file via a name or keys specified in the ``**kargs``.
-
-        :param name: The name to search for.
-        :param return_list: If only the first result or all results should be returned.
-        :param no_errors: Silence some errors which would raise if this turned to False.
-        :param kargs: Additional key-value pairs which may help in finding the desired objects.
-        :return: A single object or a list of all search results.
-        """
-        return self._collection_mgr.files().find(
-            name=name, return_list=return_list, no_errors=no_errors, **kargs
-        )
-
-    def find_menu(self, name: str = "", return_list=False, no_errors=False, **kargs):
+    def find_menu(
+        self,
+        name: str = "",
+        return_list: bool = False,
+        no_errors: bool = False,
+        **kargs: "FIND_KWARGS",
+    ) -> Optional[Union[List["menu.Menu"], "menu.Menu"]]:
         """
         Find a menu via a name or keys specified in the ``**kargs``.
 
@@ -1335,7 +1516,12 @@ class CobblerAPI:
 
     # ==========================================================================
 
-    def __since(self, mtime: float, collector, collapse: bool = False) -> list:
+    @staticmethod
+    def __since(
+        mtime: float,
+        collector: Callable[[], "Collection[ITEM]"],
+        collapse: bool = False,
+    ) -> List["ITEM"]:
         """
         Called by get_*_since functions. This is an internal part of Cobbler.
 
@@ -1345,17 +1531,19 @@ class CobblerAPI:
                          the list.
         :return: The list of objects which are newer then the given timestamp.
         """
-        results1 = collector()
-        results2 = []
-        for x in results1:
-            if x.mtime == 0 or x.mtime >= mtime:
+        results2: List["ITEM"] = []
+        item: "ITEM"
+        for item in collector():
+            if item.mtime == 0 or item.mtime >= mtime:
                 if not collapse:
-                    results2.append(x)
+                    results2.append(item)
                 else:
-                    results2.append(x.to_dict())
+                    results2.append(item.to_dict())
         return results2
 
-    def get_distros_since(self, mtime: float, collapse: bool = False):
+    def get_distros_since(
+        self, mtime: float, collapse: bool = False
+    ) -> List["distro.Distro"]:
         """
         Returns distros modified since a certain time (in seconds since Epoch)
 
@@ -1365,7 +1553,9 @@ class CobblerAPI:
         """
         return self.__since(mtime, self.distros, collapse=collapse)
 
-    def get_profiles_since(self, mtime: float, collapse: bool = False) -> list:
+    def get_profiles_since(
+        self, mtime: float, collapse: bool = False
+    ) -> List["profile_module.Profile"]:
         """
         Returns profiles modified since a certain time (in seconds since Epoch)
 
@@ -1376,7 +1566,9 @@ class CobblerAPI:
         """
         return self.__since(mtime, self.profiles, collapse=collapse)
 
-    def get_systems_since(self, mtime: float, collapse: bool = False) -> list:
+    def get_systems_since(
+        self, mtime: float, collapse: bool = False
+    ) -> List["system_module.System"]:
         """
         Return systems modified since a certain time (in seconds since Epoch)
 
@@ -1387,7 +1579,9 @@ class CobblerAPI:
         """
         return self.__since(mtime, self.systems, collapse=collapse)
 
-    def get_repos_since(self, mtime: float, collapse: bool = False) -> list:
+    def get_repos_since(
+        self, mtime: float, collapse: bool = False
+    ) -> List["repo.Repo"]:
         """
         Return repositories modified since a certain time (in seconds since Epoch)
 
@@ -1398,7 +1592,9 @@ class CobblerAPI:
         """
         return self.__since(mtime, self.repos, collapse=collapse)
 
-    def get_images_since(self, mtime: float, collapse: bool = False) -> list:
+    def get_images_since(
+        self, mtime: float, collapse: bool = False
+    ) -> List["image_module.Image"]:
         """
         Return images modified since a certain time (in seconds since Epoch)
 
@@ -1409,40 +1605,9 @@ class CobblerAPI:
         """
         return self.__since(mtime, self.images, collapse=collapse)
 
-    def get_mgmtclasses_since(self, mtime: float, collapse: bool = False) -> list:
-        """
-        Return management classes modified since a certain time (in seconds since Epoch)
-
-        :param mtime: The timestamp which marks the gate if an object is included or not.
-        :param collapse: If True then this specifies that a list of dicts should be returned instead of a list of
-                         objects.
-        :return: The list of management classes which are newer then the given timestamp.
-        """
-        return self.__since(mtime, self.mgmtclasses, collapse=collapse)
-
-    def get_packages_since(self, mtime: float, collapse: bool = False) -> list:
-        """
-        Return packages modified since a certain time (in seconds since Epoch)
-
-        :param mtime: The timestamp which marks the gate if an object is included or not.
-        :param collapse: If True then this specifies that a list of dicts should be returned instead of a list of
-                         objects.
-        :return: The list of packages which are newer then the given timestamp.
-        """
-        return self.__since(mtime, self.packages, collapse=collapse)
-
-    def get_files_since(self, mtime: float, collapse: bool = False) -> list:
-        """
-        Return files modified since a certain time (in seconds since Epoch)
-
-        :param mtime: The timestamp which marks the gate if an object is included or not.
-        :param collapse: If True then this specifies that a list of dicts should be returned instead of a list of
-                         objects.
-        :return: The list of files which are newer then the given timestamp.
-        """
-        return self.__since(mtime, self.files, collapse=collapse)
-
-    def get_menus_since(self, mtime: float, collapse=False) -> list:
+    def get_menus_since(
+        self, mtime: float, collapse: bool = False
+    ) -> List["menu.Menu"]:
         """
         Return files modified since a certain time (in seconds since Epoch)
 
@@ -1455,15 +1620,16 @@ class CobblerAPI:
 
     # ==========================================================================
 
-    def get_signatures(self) -> dict:
+    @staticmethod
+    def get_signatures() -> Dict[str, Any]:
         """
         This returns the local signature cache.
 
         :return: The dict containing all signatures.
         """
-        return utils.SIGNATURE_CACHE
+        return signatures.signature_cache
 
-    def signature_update(self):
+    def signature_update(self) -> None:
         """
         Update all signatures from the URL specified in the settings.
         """
@@ -1471,36 +1637,41 @@ class CobblerAPI:
             url = self.settings().signature_url
             dlmgr = download_manager.DownloadManager()
             # write temp json file
-            tmpfile = tempfile.NamedTemporaryFile()
-            sigjson = dlmgr.urlread(url)
-            tmpfile.write(sigjson.text.encode())
-            tmpfile.flush()
-            self.logger.debug(
-                "Successfully got file from %s" % self.settings().signature_url
-            )
-            # test the import without caching it
-            try:
-                utils.load_signatures(tmpfile.name, cache=False)
-            except:
-                self.logger.error(
-                    "Downloaded signatures failed test load (tempfile = %s)",
-                    tmpfile.name,
+            with tempfile.NamedTemporaryFile() as tmpfile:
+                sigjson = dlmgr.urlread(url)
+                tmpfile.write(sigjson.text.encode())
+                tmpfile.flush()
+                self.logger.debug(
+                    "Successfully got file from %s", self.settings().signature_url
                 )
+                # test the import without caching it
+                try:
+                    signatures.load_signatures(tmpfile.name, cache=False)
+                except Exception:
+                    self.logger.error(
+                        "Downloaded signatures failed test load (tempfile = %s)",
+                        tmpfile.name,
+                    )
 
             # rewrite the real signature file and import it for real
-            f = open(self.settings().signature_path, "w")
-            f.write(sigjson.text)
-            f.close()
+            with open(
+                self.settings().signature_path, "w", encoding="UTF-8"
+            ) as signature_fd:
+                signature_fd.write(sigjson.text)
 
-            utils.load_signatures(self.settings().signature_path)
-        except:
+            signatures.load_signatures(self.settings().signature_path)
+            self.clean_items_cache(self.get_signatures())
+        except Exception:
             utils.log_exc()
 
     # ==========================================================================
 
     def dump_vars(
-        self, obj, formatted_output: bool = False, remove_dicts: bool = False
-    ):
+        self,
+        obj: "item_base.BootableItem",
+        formatted_output: bool = False,
+        remove_dicts: bool = False,
+    ) -> Union[Dict[str, Any], str]:
         """
         Dump all known variables related to that object.
 
@@ -1513,7 +1684,7 @@ class CobblerAPI:
 
     # ==========================================================================
 
-    def auto_add_repos(self):
+    def auto_add_repos(self) -> None:
         """
         Import any repos this server knows about and mirror them. Run ``cobbler reposync`` to apply the changes.
         Credit: Seth Vidal.
@@ -1522,35 +1693,35 @@ class CobblerAPI:
         """
         self.log("auto_add_repos")
         try:
-            import dnf
-        except ImportError as e:
-            raise ImportError("dnf is not installed") from e
+            import dnf  # type: ignore
+        except ImportError as error:
+            raise ImportError("dnf is not installed") from error
 
-        base = dnf.Base()
-        base.read_all_repos()
-        basearch = base.conf.substitutions["basearch"]
+        base = dnf.Base()  # type: ignore
+        base.read_all_repos()  # type: ignore
+        basearch = base.conf.substitutions["basearch"]  # type: ignore
 
-        for repository in base.repos.iter_enabled():
-            auto_name = repository.id + "-" + base.conf.releasever + "-" + basearch
+        for repository in base.repos.iter_enabled():  # type: ignore
+            auto_name: str = repository.id + "-" + base.conf.releasever + "-" + basearch  # type: ignore
 
-            if self.find_repo(auto_name) is None:
+            if self.find_repo(auto_name) is None:  # type: ignore
                 cobbler_repo = self.new_repo()
                 cobbler_repo.name = auto_name
                 cobbler_repo.breed = enums.RepoBreeds.YUM
                 cobbler_repo.arch = basearch
-                cobbler_repo.comment = repository.name
-                baseurl = repository.baseurl
-                metalink = repository.metalink
-                mirrorlist = repository.mirrorlist
+                cobbler_repo.comment = repository.name  # type: ignore
+                baseurl = repository.baseurl  # type: ignore
+                metalink = repository.metalink  # type: ignore
+                mirrorlist = repository.mirrorlist  # type: ignore
 
                 if metalink is not None:
-                    mirror = metalink
+                    mirror = metalink  # type: ignore
                     mirror_type = enums.MirrorType.METALINK
                 elif mirrorlist is not None:
-                    mirror = mirrorlist
+                    mirror = mirrorlist  # type: ignore
                     mirror_type = enums.MirrorType.MIRRORLIST
-                elif len(baseurl) > 0:
-                    mirror = baseurl[0]
+                elif len(baseurl) > 0:  # type: ignore
+                    mirror = baseurl[0]  # type: ignore
                     mirror_type = enums.MirrorType.BASEURL
                 else:
                     mirror = ""
@@ -1558,14 +1729,14 @@ class CobblerAPI:
 
                 cobbler_repo.mirror = mirror
                 cobbler_repo.mirror_type = mirror_type
-                self.log("auto repo adding: %s" % auto_name)
+                self.log(f"auto repo adding: {auto_name}")
                 self.add_repo(cobbler_repo)
             else:
-                self.log("auto repo adding: %s - exists" % auto_name)
+                self.log(f"auto repo adding: {auto_name} - exists")
 
     # ==========================================================================
 
-    def get_repo_config_for_profile(self, obj) -> str:
+    def get_repo_config_for_profile(self, obj: "BaseItem") -> str:
         """
         Get the repository configuration for the specified profile
 
@@ -1574,7 +1745,7 @@ class CobblerAPI:
         """
         return self.yumgen.get_yum_config(obj, True)
 
-    def get_repo_config_for_system(self, obj) -> str:
+    def get_repo_config_for_system(self, obj: "BaseItem") -> str:
         """
         Get the repository configuration for the specified system.
 
@@ -1585,7 +1756,7 @@ class CobblerAPI:
 
     # ==========================================================================
 
-    def get_template_file_for_profile(self, obj, path) -> str:
+    def get_template_file_for_profile(self, obj: "BootableItem", path: str) -> str:
         """
         Get the template for the specified profile.
 
@@ -1596,10 +1767,9 @@ class CobblerAPI:
         template_results = self.tftpgen.write_templates(obj, False, path)
         if path in template_results:
             return template_results[path]
-        else:
-            return "# template path not found for specified profile"
+        return "# template path not found for specified profile"
 
-    def get_template_file_for_system(self, obj, path):
+    def get_template_file_for_system(self, obj: "BootableItem", path: str) -> str:
         """
         Get the template for the specified system.
 
@@ -1610,8 +1780,7 @@ class CobblerAPI:
         template_results = self.tftpgen.write_templates(obj, False, path)
         if path in template_results:
             return template_results[path]
-        else:
-            return "# template path not found for specified system"
+        return "# template path not found for specified system"
 
     # ==========================================================================
 
@@ -1626,10 +1795,12 @@ class CobblerAPI:
         """
         self.log("generate_ipxe")
         data = ""
-        if profile is None and image is None and system is None:
+        if profile is None and image is None and system is None:  # type: ignore
             boot_menu = self.tftpgen.make_pxe_menu()
             if "ipxe" in boot_menu:
                 data = boot_menu["ipxe"]
+                if not isinstance(data, str):
+                    raise ValueError("ipxe boot menu didn't have right type!")
         elif system:
             data = self.tftpgen.generate_ipxe("system", system)
         elif profile:
@@ -1640,7 +1811,7 @@ class CobblerAPI:
 
     # ==========================================================================
 
-    def generate_bootcfg(self, profile: str, system: str) -> str:
+    def generate_bootcfg(self, profile: str = "", system: str = "") -> str:
         """
         Generate a boot configuration. The system wins over the profile.
 
@@ -1651,12 +1822,13 @@ class CobblerAPI:
         self.log("generate_bootcfg")
         if system:
             return self.tftpgen.generate_bootcfg("system", system)
-        else:
-            return self.tftpgen.generate_bootcfg("profile", profile)
+        return self.tftpgen.generate_bootcfg("profile", profile)
 
     # ==========================================================================
 
-    def generate_script(self, profile: Optional[str], system: Optional[str], name: str):
+    def generate_script(
+        self, profile: Optional[str], system: Optional[str], name: str
+    ) -> str:
         """
         Generate an autoinstall script for the specified profile or system. The system wins over the profile.
 
@@ -1669,19 +1841,20 @@ class CobblerAPI:
         self.log("generate_script")
         if system:
             return self.tftpgen.generate_script("system", system, name)
-        else:
+        if profile:
             return self.tftpgen.generate_script("profile", profile, name)
+        return ""
 
     # ==========================================================================
 
-    def check(self) -> Union[None, list]:
+    def check(self) -> List[str]:
         """
         See if all preqs for network booting are valid. This returns a list of strings containing instructions on things
         to correct. An empty list means there is nothing to correct, but that still doesn't mean there are configuration
         errors. This is mainly useful for human admins, who may, for instance, forget to properly set up their TFTP
         servers for PXE, etc.
 
-        :return: None or a list of things to address.
+        :return: A list of things to address.
         """
         self.log("check")
         action_check = check.CobblerCheck(self)
@@ -1689,7 +1862,7 @@ class CobblerAPI:
 
     # ==========================================================================
 
-    def validate_autoinstall_files(self):
+    def validate_autoinstall_files(self) -> None:
         """
         Validate if any of the autoinstallation files are invalid and if yes report this.
 
@@ -1700,7 +1873,7 @@ class CobblerAPI:
 
     # ==========================================================================
 
-    def sync_systems(self, systems: List[str], verbose: bool = False):
+    def sync_systems(self, systems: List[str], verbose: bool = False) -> None:
         """
         Take the values currently written to the configuration files in /etc, and /var, and build out the information
         tree found in /tftpboot. Any operations done in the API that have not been saved with serialize() will NOT be
@@ -1712,8 +1885,8 @@ class CobblerAPI:
         self.logger.info("sync_systems")
         if not (
             systems
-            and isinstance(systems, list)
-            and all(isinstance(sys_name, str) for sys_name in systems)
+            and isinstance(systems, list)  # type: ignore
+            and all(isinstance(sys_name, str) for sys_name in systems)  # type: ignore
         ):
             if len(systems) < 1:
                 self.logger.debug(
@@ -1721,12 +1894,16 @@ class CobblerAPI:
                 )
                 return
             raise TypeError("Systems must be a list of one or more strings.")
-        sync_obj = self.get_sync(verbose=verbose)
-        sync_obj.run_sync_systems(systems)
+        self.logger.info(
+            "Waiting sync_lock to be available to perform the sync action (this might take some time)"
+        )
+        with utils.filelock("/var/lib/cobbler/sync_lock"):
+            sync_obj = self.get_sync(verbose=verbose)
+            sync_obj.run_sync_systems(systems)
 
     # ==========================================================================
 
-    def sync(self, verbose: bool = False, what: Optional[list] = None):
+    def sync(self, verbose: bool = False, what: Optional[List[str]] = None) -> None:
         """
         Take the values currently written to the configuration files in /etc, and /var, and build out the information
         tree found in /tftpboot. Any operations done in the API that have not been saved with serialize() will NOT be
@@ -1738,11 +1915,15 @@ class CobblerAPI:
         # Empty what: Full sync
         if not what:
             self.logger.info("syncing all")
-            sync_obj = self.get_sync(verbose=verbose)
-            sync_obj.run()
+            self.logger.info(
+                "Waiting sync_lock to be available to perform the sync action (this might take some time)"
+            )
+            with utils.filelock("/var/lib/cobbler/sync_lock"):
+                sync_obj = self.get_sync(verbose=verbose)
+                sync_obj.run()
             return
         # Non empty what: Specific sync
-        if not isinstance(what, list):
+        if not isinstance(what, list):  # type: ignore
             raise TypeError("'what' needs to be of type list!")
         if "dhcp" in what:
             self.sync_dhcp()
@@ -1751,7 +1932,7 @@ class CobblerAPI:
 
     # ==========================================================================
 
-    def sync_dns(self):
+    def sync_dns(self) -> None:
         """
         Only build out the DNS configuration.
         """
@@ -1761,11 +1942,15 @@ class CobblerAPI:
         self.logger.info("sync_dns")
         dns_module = self.get_module_from_file("dns", "module", "managers.bind")
         dns = dns_module.get_manager(self)
-        dns.sync()
+        self.logger.info(
+            "Waiting sync_lock to be available to perform the sync action (this might take some time)"
+        )
+        with utils.filelock("/var/lib/cobbler/sync_lock"):
+            dns.sync()
 
     # ==========================================================================
 
-    def sync_dhcp(self):
+    def sync_dhcp(self) -> None:
         """
         Only build out the DHCP configuration.
         """
@@ -1775,18 +1960,22 @@ class CobblerAPI:
         self.logger.info("sync_dhcp")
         dhcp_module = self.get_module_from_file("dhcp", "module", "managers.isc")
         dhcp = dhcp_module.get_manager(self)
-        dhcp.sync()
+        self.logger.info(
+            "Waiting sync_lock to be available to perform the sync action (this might take some time)"
+        )
+        with utils.filelock("/var/lib/cobbler/sync_lock"):
+            dhcp.sync()
 
     # ==========================================================================
 
-    def get_sync(self, verbose: bool = False):
+    def get_sync(self, verbose: bool = False) -> "sync_module.CobblerSync":
         """
         Get a Cobbler Sync object which may be executed through the call of ``obj.run()``.
 
         :param verbose: If the action should be just logged as needed or (if True) as much verbose as possible.
         :return: An instance of the CobblerSync class to execute the sync with.
         """
-        if not isinstance(verbose, bool):
+        if not isinstance(verbose, bool):  # type: ignore
             raise TypeError("get_sync: verbose parameter needs to be of type bool!")
         dhcp = self.get_module_from_file("dhcp", "module", "managers.isc").get_manager(
             self
@@ -1800,13 +1989,15 @@ class CobblerAPI:
             "managers.in_tftpd",
         ).get_manager(self)
 
-        return sync.CobblerSync(self, dhcp=dhcp, dns=dns, tftpd=tftpd, verbose=verbose)
+        return sync_module.CobblerSync(
+            self, dhcp=dhcp, dns=dns, tftpd=tftpd, verbose=verbose
+        )
 
     # ==========================================================================
 
     def reposync(
         self, name: Optional[str] = None, tries: int = 1, nofail: bool = False
-    ):
+    ) -> None:
         """
         Take the contents of ``/var/lib/cobbler/repos`` and update them -- or create the initial copy if no contents
         exist yet.
@@ -1822,7 +2013,7 @@ class CobblerAPI:
 
     # ==========================================================================
 
-    def status(self, mode: str):
+    def status(self, mode: str) -> Union[Dict[Any, Any], str]:
         """
         Get the status of the current Cobbler instance.
 
@@ -1838,12 +2029,12 @@ class CobblerAPI:
         self,
         mirror_url: str,
         mirror_name: str,
-        network_root=None,
-        autoinstall_file=None,
-        rsync_flags=None,
-        arch=None,
-        breed=None,
-        os_version=None,
+        network_root: Optional[str] = None,
+        autoinstall_file: Optional[str] = None,
+        rsync_flags: Optional[str] = None,
+        arch: Optional[str] = None,
+        breed: Optional[str] = None,
+        os_version: Optional[str] = None,
     ) -> bool:
         """
         Automatically import a directory tree full of distribution files.
@@ -1852,115 +2043,25 @@ class CobblerAPI:
                            If mirror_url is a filesystem path and mirroring is not desired, set network_root to
                            something like "nfs://path/to/mirror_url/root"
         :param mirror_name: The name of the mirror.
-        :param network_root:
-        :param autoinstall_file:
-        :param rsync_flags:
-        :param arch:
-        :param breed:
-        :param os_version:
+        :param network_root: the remote path (nfs/http/ftp) for the distro files
+        :param autoinstall_file: user-specified response file, which will override the default
+        :param rsync_flags: Additional flags that will be passed to the rsync call that will sync everything to the
+                            Cobbler webroot.
+        :param arch: user-specified architecture
+        :param breed: user-specified breed
+        :param os_version: user-specified OS version
         """
-        self.log(
-            "import_tree",
-            [mirror_url, mirror_name, network_root, autoinstall_file, rsync_flags],
+        distro_importer = importer.Importer(api=self)
+        return distro_importer.run(
+            mirror_url,
+            mirror_name,
+            network_root,
+            autoinstall_file,
+            rsync_flags,
+            arch,
+            breed,
+            os_version,
         )
-
-        # Both --path and --name are required arguments.
-        if mirror_url is None or not mirror_url:
-            self.log("import failed.  no --path specified")
-            return False
-        if mirror_name is None or not mirror_name:
-            self.log("import failed.  no --name specified")
-            return False
-
-        path = os.path.normpath(
-            "%s/distro_mirror/%s" % (self.settings().webdir, mirror_name)
-        )
-        if arch is not None:
-            arch = arch.lower()
-            if arch == "x86":
-                # be consistent
-                arch = "i386"
-            if path.split("-")[-1] != arch:
-                path += "-%s" % arch
-
-        # We need to mirror (copy) the files.
-        self.log(
-            "importing from a network location, running rsync to fetch the files first"
-        )
-
-        utils.mkdir(path)
-
-        # Prevent rsync from creating the directory name twice if we are copying via rsync.
-
-        if not mirror_url.endswith("/"):
-            mirror_url = "%s/" % mirror_url
-
-        if (
-            mirror_url.startswith("http://")
-            or mirror_url.startswith("https://")
-            or mirror_url.startswith("ftp://")
-            or mirror_url.startswith("nfs://")
-        ):
-            # HTTP mirrors are kind of primative. rsync is better. That's why this isn't documented in the manpage and
-            # we don't support them.
-            # TODO: how about adding recursive FTP as an option?
-            self.log("unsupported protocol")
-            return False
-        else:
-            # Good, we're going to use rsync.. We don't use SSH for public mirrors and local files.
-            # Presence of user@host syntax means use SSH
-            spacer = ""
-            if not mirror_url.startswith("rsync://") and not mirror_url.startswith("/"):
-                spacer = ' -e "ssh" '
-            rsync_cmd = RSYNC_CMD
-            if rsync_flags:
-                rsync_cmd += " " + rsync_flags
-
-            # If --available-as was specified, limit the files we pull down via rsync to just those that are critical
-            # to detecting what the distro is
-            if network_root is not None:
-                rsync_cmd += " --include-from=/etc/cobbler/import_rsync_whitelist"
-
-            # kick off the rsync now
-            utils.run_this(rsync_cmd, (spacer, mirror_url, path))
-
-        if network_root is not None:
-            # In addition to mirroring, we're going to assume the path is available over http, ftp, and nfs, perhaps on
-            # an external filer. Scanning still requires --mirror is a filesystem path, but --available-as marks the
-            # network path. This allows users to point the path at a directory containing just the network boot files
-            # while the rest of the distro files are available somewhere else.
-
-            # Find the filesystem part of the path, after the server bits, as each distro URL needs to be calculated
-            # relative to this.
-
-            if not network_root.endswith("/"):
-                network_root += "/"
-            valid_roots = ["nfs://", "ftp://", "http://", "https://"]
-            for valid_root in valid_roots:
-                if network_root.startswith(valid_root):
-                    break
-            else:
-                self.log(
-                    "Network root given to --available-as must be nfs://, ftp://, http://, or https://"
-                )
-                return False
-
-            if network_root.startswith("nfs://"):
-                try:
-                    (a, b, rest) = network_root.split(":", 3)
-                except:
-                    self.log(
-                        "Network root given to --available-as is missing a colon, please see the manpage example."
-                    )
-                    return False
-
-        import_module = self.get_module_by_name(
-            "managers.import_signatures"
-        ).get_import_manager(self)
-        import_module.run(
-            path, mirror_name, network_root, autoinstall_file, arch, breed, os_version
-        )
-        return True
 
     # ==========================================================================
 
@@ -1970,7 +2071,7 @@ class CobblerAPI:
         addgroup: Optional[str] = None,
         removeuser: Optional[str] = None,
         removegroup: Optional[str] = None,
-    ):
+    ) -> None:
         """
         Configures users/groups to run the Cobbler CLI as non-root.
         Pass in only one option at a time. Powers ``cobbler aclconfig``.
@@ -1990,23 +2091,30 @@ class CobblerAPI:
 
     # ==========================================================================
 
-    def serialize(self):
+    def serialize(self) -> None:
         """
         Save the cobbler_collections to disk.
         Cobbler internal use only.
         """
         self._collection_mgr.serialize()
 
-    def deserialize(self):
+    def deserialize(self) -> None:
         """
         Load cobbler_collections from disk.
         Cobbler internal use only.
         """
         return self._collection_mgr.deserialize()
 
+    def deserialize_item(self, obj: "BaseItem") -> Dict[str, Any]:
+        """
+        Load cobbler item from disk.
+        Cobbler internal use only.
+        """
+        return self._collection_mgr.deserialize_one_item(obj)
+
     # ==========================================================================
 
-    def get_module_by_name(self, module_name: str):
+    def get_module_by_name(self, module_name: str) -> Optional[ModuleType]:
         """
         Returns a loaded Cobbler module named 'name', if one exists, else None.
         Cobbler internal use only.
@@ -2014,26 +2122,26 @@ class CobblerAPI:
         :param module_name:
         :return:
         """
-        return module_loader.get_module_by_name(module_name)
+        return self.module_loader.get_module_by_name(module_name)
 
     def get_module_from_file(
         self, section: str, name: str, fallback: Optional[str] = None
-    ):
+    ) -> ModuleType:
         """
-        Looks in ``/etc/cobbler/modules.conf`` for a section called 'section' and a key called 'name', and then returns
+        Looks in ``/etc/cobbler/settings.yaml`` for a section called 'section' and a key called 'name', and then returns
         the module that corresponds to the value of that key.
         Cobbler internal use only.
 
-        :param section:
-        :param name:
-        :param fallback:
-        :return:
+        :param section: The section to look at.
+        :param name: The name of the module to retrieve
+        :param fallback: The default module in case the requested one is not found.
+        :return: The requested Python Module.
         """
-        return module_loader.get_module_from_file(section, name, fallback)
+        return self.module_loader.get_module_from_file(section, name, fallback)
 
     def get_module_name_from_file(
         self, section: str, name: str, fallback: Optional[str] = None
-    ):
+    ) -> str:
         """
         Looks up a module the same as ``get_module_from_file`` but returns the module name rather than the module
         itself.
@@ -2043,9 +2151,9 @@ class CobblerAPI:
         :param fallback:
         :return:
         """
-        return module_loader.get_module_name(section, name, fallback)
+        return self.module_loader.get_module_name(section, name, fallback)
 
-    def get_modules_in_category(self, category: str):
+    def get_modules_in_category(self, category: str) -> List[ModuleType]:
         """
         Returns all modules in a given category, for instance "serializer", or "cli".
         Cobbler internal use only.
@@ -2053,7 +2161,7 @@ class CobblerAPI:
         :param category: The category to check.
         :return: The list of modules.
         """
-        return module_loader.get_modules_in_category(category)
+        return self.module_loader.get_modules_in_category(category)
 
     # ==========================================================================
 
@@ -2066,11 +2174,13 @@ class CobblerAPI:
         :param password: The password to check for authentication.
         :return: Whether the action succeeded or not.
         """
-        rc = self.authn.authenticate(self, user, password)
-        self.log("authenticate", [user, rc])
-        return rc
+        return_code: bool = self.authn.authenticate(self, user, password)
+        self.log("authenticate", [user, str(return_code)])
+        return return_code
 
-    def authorize(self, user: str, resource: str, arg1=None, arg2=None) -> int:
+    def authorize(
+        self, user: str, resource: str, arg1: Optional[str] = None, arg2: Any = None
+    ) -> int:
         """
         (Remote) access control. This depends on the chosen authorization module.
         Cobbler internal use only.
@@ -2081,25 +2191,29 @@ class CobblerAPI:
         :param arg2: Not known what this parameter does exactly.
         :return: The return code of the action.
         """
-        rc = self.authz.authorize(self, user, resource, arg1, arg2)
-        self.log("authorize", [user, resource, arg1, arg2, rc], debug=True)
-        return rc
+        return_code: int = self.authz.authorize(self, user, resource, arg1, arg2)
+        self.log(
+            "authorize", [user, resource, arg1, arg2, str(return_code)], debug=True
+        )
+        return return_code
 
     # ==========================================================================
 
     def build_iso(
         self,
         iso: str = "autoinst.iso",
-        profiles=None,
-        systems=None,
+        profiles: Optional[List[str]] = None,
+        systems: Optional[List[str]] = None,
         buildisodir: str = "",
-        distro_name: str = "",
+        distro_name: Optional[str] = None,
         standalone: bool = False,
         airgapped: bool = False,
         source: str = "",
         exclude_dns: bool = False,
+        exclude_systems: bool = False,
         xorrisofs_opts: str = "",
-    ):
+        esp: Optional[str] = None,
+    ) -> None:
         r"""
         Build an iso image which may be network bootable or not.
 
@@ -2107,46 +2221,41 @@ class CobblerAPI:
         :param profiles: Use these profiles only
         :param systems: Use these systems only
         :param buildisodir: This overwrites the directory from the settings in which the iso is built in.
-        :param distro_name: Used with ``--standalone`` and ``--airgapped`` to create a distro-based ISO including all
-                       associated.
+        :param distro_name: Use this distro architecture. If not used, autodetected from profiles or systems.
         :param standalone: This means that no network connection is needed to install the generated iso.
         :param airgapped: This option implies ``standalone=True``.
         :param source: If the iso should be offline available this is the path to the sources of the image.
         :param exclude_dns: Whether the repositories have to be locally available or the internet is reachable.
+        :param exclude_systems: Whether system entries should be skipped or generated.
         :param xorrisofs_opts: ``xorrisofs`` options to include additionally.
+        :param esp: location of the ESP partition, e.g. for secure boot.
         """
-        if not isinstance(standalone, bool):
+        if not isinstance(standalone, bool):  # type: ignore
             raise TypeError('Argument "standalone" needs to be of type bool!')
-        if not isinstance(airgapped, bool):
+        if not isinstance(airgapped, bool):  # type: ignore
             raise TypeError('Argument "airgapped" needs to be of type bool!')
+        if esp and not Path(esp).exists():
+            raise TypeError(f"Specified ESP partition does not exist: {esp}")
         if airgapped:
             standalone = True
-        if standalone:
-            standalone_builder = StandaloneBuildiso(self)
-            standalone_builder.run(
-                iso=iso,
-                buildisodir=buildisodir,
-                profiles=profiles,
-                xorrisofs_opts=xorrisofs_opts,
-                distro_name=distro_name,
-                airgapped=airgapped,
-                source=source,
-            )
-        else:
-            netboot_builder = NetbootBuildiso(self)
-            netboot_builder.run(
-                iso=iso,
-                buildisodir=buildisodir,
-                profiles=profiles,
-                xorrisofs_opts=xorrisofs_opts,
-                distro_name=distro_name,
-                systems=systems,
-                exclude_dns=exclude_dns,
-            )
+        Builder = StandaloneBuildiso if standalone else NetbootBuildiso
+        Builder(self).run(
+            iso=iso,
+            buildisodir=buildisodir,
+            profiles=profiles,
+            xorrisofs_opts=xorrisofs_opts,
+            distro_name=distro_name,
+            airgapped=airgapped,
+            source=source,
+            systems=systems,
+            exclude_dns=exclude_dns,
+            esp=esp,
+            exclude_systems=exclude_systems,
+        )
 
     # ==========================================================================
 
-    def hardlink(self):
+    def hardlink(self) -> int:
         """
         Hardlink all files where this is possible to improve performance.
 
@@ -2166,14 +2275,11 @@ class CobblerAPI:
         system_patterns: str = "",
         repo_patterns: str = "",
         image_patterns: str = "",
-        mgmtclass_patterns=None,
-        package_patterns=None,
-        file_patterns: bool = False,
         prune: bool = False,
         omit_data: bool = False,
         sync_all: bool = False,
         use_ssl: bool = False,
-    ):
+    ) -> None:
         """
         Pull down data/configs from a remote Cobbler server that is a master to this server.
 
@@ -2184,9 +2290,6 @@ class CobblerAPI:
         :param system_patterns: The pattern of systems which should be synced.
         :param repo_patterns: The pattern of repositories which should be synced.
         :param image_patterns: The pattern of images which should be synced.
-        :param mgmtclass_patterns: The pattern of management classes which should be synced.
-        :param package_patterns: The pattern of packages which should be synced.
-        :param file_patterns: The pattern of files which should be synced.
         :param prune: Whether the object not on the master should be removed or not.
         :param omit_data: If the data downloaded by the current Cobbler server should be rsynced to the destination
                           server.
@@ -2195,7 +2298,7 @@ class CobblerAPI:
         :param use_ssl: Whether SSL should be used (True) or not (False).
         """
         replicator = replicate.Replicate(self)
-        return replicator.run(
+        replicator.run(
             cobbler_master=cobbler_master,
             port=port,
             distro_patterns=distro_patterns,
@@ -2203,9 +2306,6 @@ class CobblerAPI:
             system_patterns=system_patterns,
             repo_patterns=repo_patterns,
             image_patterns=image_patterns,
-            mgmtclass_patterns=mgmtclass_patterns,
-            package_patterns=package_patterns,
-            file_patterns=file_patterns,
             prune=prune,
             omit_data=omit_data,
             sync_all=sync_all,
@@ -2214,41 +2314,13 @@ class CobblerAPI:
 
     # ==========================================================================
 
-    def report(
-        self,
-        report_what: Optional[str] = None,
-        report_name: Optional[str] = None,
-        report_type: Optional[str] = None,
-        report_fields: Optional[str] = None,
-        report_noheaders: Optional[bool] = None,
-    ):
-        """
-        Report functionality for Cobbler.
-
-        :param report_what: The object type that should be reported.
-        :param report_name: The name of the object which should be possibly reported.
-        :param report_type: May be either "text", "csv", "mediawiki", "trac" or "doku".
-        :param report_fields: Specify "all" or the fields you want to be reported.
-        :param report_noheaders: If the column headers should be included in the output or not.
-        """
-        reporter = report.Report(self)
-        return reporter.run(
-            report_what=report_what,
-            report_name=report_name,
-            report_type=report_type,
-            report_fields=report_fields,
-            report_noheaders=report_noheaders,
-        )
-
-    # ==========================================================================
-
     def power_system(
         self,
-        system: str,
+        system: "system_module.System",
         power_operation: str,
         user: Optional[str] = None,
         password: Optional[str] = None,
-    ):
+    ) -> Optional[bool]:
         """
         Power on / power off / get power status /reboot a system.
 
@@ -2258,25 +2330,24 @@ class CobblerAPI:
         :param password: power management password
         :return: bool if operation was successful
         """
-
+        power_mgr = power_manager.PowerManager(self)
         if power_operation == "on":
-            self.power_mgr.power_on(system, user=user, password=password)
+            power_mgr.power_on(system, user=user, password=password)
         elif power_operation == "off":
-            self.power_mgr.power_off(system, user=user, password=password)
+            power_mgr.power_off(system, user=user, password=password)
         elif power_operation == "status":
-            return self.power_mgr.get_power_status(system, user=user, password=password)
+            return power_mgr.get_power_status(system, user=user, password=password)
         elif power_operation == "reboot":
-            self.power_mgr.reboot(system, user=user, password=password)
+            power_mgr.reboot(system, user=user, password=password)
         else:
             utils.die(
-                "invalid power operation '%s', expected on/off/status/reboot"
-                % power_operation
+                f"invalid power operation '{power_operation}', expected on/off/status/reboot"
             )
         return None
 
     # ==========================================================================
 
-    def clear_logs(self, system):
+    def clear_logs(self, system: "system_module.System") -> None:
         """
         Clears console and anamon logs for system
 
@@ -2286,7 +2357,9 @@ class CobblerAPI:
 
     # ==========================================================================
 
-    def get_valid_obj_boot_loaders(self, obj) -> List[str]:
+    def get_valid_obj_boot_loaders(
+        self, obj: Union["distro.Distro", "image_module.Image"]
+    ) -> List[str]:
         """
         Return the list of valid boot loaders for the object
 
@@ -2297,9 +2370,76 @@ class CobblerAPI:
 
     # ==========================================================================
 
-    def mkloaders(self):
+    def mkloaders(self) -> None:
         """
         Create the GRUB installer images via this API call. It utilizes ``grub2-mkimage`` behind the curtain.
         """
         action = mkloaders.MkLoaders(self)
         action.run()
+
+    # ==========================================================================
+
+    def input_string_or_list_no_inherit(
+        self, options: Optional[Union[str, List[Any]]]
+    ) -> List[Any]:
+        """
+        .. seealso:: :func:`~cobbler.utils.input_converters.input_string_or_list_no_inherit`
+        """
+        return input_converters.input_string_or_list_no_inherit(options)
+
+    def input_string_or_list(
+        self, options: Optional[Union[str, List[Any]]]
+    ) -> Union[List[Any], str]:
+        """
+        .. seealso:: :func:`~cobbler.utils.input_converters.input_string_or_list`
+        """
+        return input_converters.input_string_or_list(options)
+
+    def input_string_or_dict(
+        self,
+        options: Union[str, List[Any], Dict[Any, Any]],
+        allow_multiples: bool = True,
+    ) -> Union[str, Dict[Any, Any]]:
+        """
+        .. seealso:: :func:`~cobbler.utils.input_converters.input_string_or_dict`
+        """
+        return input_converters.input_string_or_dict(
+            options, allow_multiples=allow_multiples
+        )
+
+    def input_string_or_dict_no_inherit(
+        self,
+        options: Union[str, List[Any], Dict[Any, Any]],
+        allow_multiples: bool = True,
+    ) -> Dict[Any, Any]:
+        """
+        .. seealso:: :func:`~cobbler.utils.input_converters.input_string_or_dict_no_inherit`
+        """
+        return input_converters.input_string_or_dict_no_inherit(
+            options, allow_multiples=allow_multiples
+        )
+
+    def input_boolean(self, value: Union[str, bool, int]) -> bool:
+        """
+        .. seealso:: :func:`~cobbler.utils.input_converters.input_boolean`
+        """
+        return input_converters.input_boolean(value)
+
+    def input_int(self, value: Union[str, int, float]) -> int:
+        """
+        .. seealso:: :func:`~cobbler.utils.input_converters.input_int`
+        """
+        return input_converters.input_int(value)
+
+    def get_tftp_file(self, path: str, offset: int, size: int) -> Tuple[bytes, int]:
+        """
+        Generate and return a file for a TFTP client.
+
+        :param path: Path to file
+        :param offset: Offset of the requested chunk in the file
+        :param size: Size of the requested chunk in the file
+        :return: The requested chunk and the length of the whole file
+        """
+        normalized_path = Path(os.path.normpath(os.path.join("/", path)))
+
+        return self.tftpgen.generate_tftp_file(normalized_path, offset, size)

@@ -1,42 +1,39 @@
 """
-Copyright 2014-2015. Jorgen Maas <jorgen.maas@gmail.com>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
-02110-1301  USA
+Cobbler module that is related to validating data for other internal Cobbler modules.
 """
+
+# SPDX-License-Identifier: GPL-2.0-or-later
+# SPDX-FileCopyrightText: Copyright 2014-2015. Jorgen Maas <jorgen.maas@gmail.com>
 
 import re
 import shlex
-from urllib.parse import urlparse
 from ipaddress import AddressValueError, NetmaskValueError
-from typing import Union
+from typing import TYPE_CHECKING, List, Union
+from urllib.parse import urlparse
 from uuid import UUID
 
 import netaddr
 
 from cobbler import enums, utils
-from cobbler.items import item
+from cobbler.items.abstract import base_item
+from cobbler.utils import input_converters, signatures
+
+if TYPE_CHECKING:
+    from cobbler.api import CobblerAPI
+
 
 RE_HOSTNAME = re.compile(
-    r"^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])(\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]))*$"
+    r"^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])"
+    r"(\.([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}[a-zA-Z0-9]))*$"
 )
 RE_URL_GRUB = re.compile(r"^\((?P<protocol>http|tftp),(?P<server>.*)\)/(?P<path>.*)$")
 RE_URL = re.compile(
     r"^[a-zA-Z\d-]{,63}(\.[a-zA-Z\d-]{,63})*$"
 )  # https://stackoverflow.com/a/2894918
 RE_SCRIPT_NAME = re.compile(r"[a-zA-Z0-9_\-.]+")
+RE_INFINIBAND_MAC = re.compile(
+    "^" + ":".join(["([0-9A-F]{1,2})"] * 20) + "$", re.IGNORECASE
+)
 
 # blacklist invalid values to the repo statement in autoinsts
 AUTOINSTALL_REPO_BLACKLIST = ["enabled", "gpgcheck", "gpgkey"]
@@ -53,22 +50,21 @@ def hostname(dnsname: str) -> str:
     :returns: Hostname or FQDN
     :raises TypeError: If the Hostname/FQDN is not a string or in an invalid format.
     """
-    if not isinstance(dnsname, str):
+    if not isinstance(dnsname, str):  # type: ignore
         raise TypeError("Invalid input, dnsname must be a string")
-    else:
-        dnsname = dnsname.strip()
+    dnsname = dnsname.strip()
 
     if dnsname == "":
         # hostname is not required
         return dnsname
 
     if not RE_HOSTNAME.match(dnsname):
-        raise ValueError("Invalid hostname format (%s)" % dnsname)
+        raise ValueError(f"Invalid hostname format ({dnsname})")
 
     return dnsname
 
 
-def mac_address(mac: str, for_item=True) -> str:
+def mac_address(mac: str, for_item: bool = True) -> str:
     """
     Validate as an Ethernet MAC address.
 
@@ -78,7 +74,7 @@ def mac_address(mac: str, for_item=True) -> str:
     :raises ValueError: Raised in case ``mac`` has an invalid format.
     :raises TypeError: Raised in case ``mac`` is not a string.
     """
-    if not isinstance(mac, str):
+    if not isinstance(mac, str):  # type: ignore
         raise TypeError("Invalid input, mac must be a string")
     mac = mac.lower().strip()
 
@@ -92,8 +88,8 @@ def mac_address(mac: str, for_item=True) -> str:
         if mac == "":
             return mac
 
-    if not netaddr.valid_mac(mac):
-        raise ValueError("Invalid mac address format (%s)" % mac)
+    if not netaddr.valid_mac(mac) and RE_INFINIBAND_MAC.match(mac) is None:  # type: ignore
+        raise ValueError(f"Invalid mac address format ({mac})")
 
     return mac
 
@@ -108,18 +104,18 @@ def ipv4_address(addr: str) -> str:
     :raises AddressValueError: Raised in case ``addr`` is not a valid IPv4 address.
     :raises NetmaskValueError: Raised in case ``addr`` is not a valid IPv4 netmask.
     """
-    if not isinstance(addr, str):
+    if not isinstance(addr, str):  # type: ignore
         raise TypeError("Invalid input, addr must be a string")
     addr = addr.strip()
 
     if addr == "":
         return addr
 
-    if not netaddr.valid_ipv4(addr):
-        raise AddressValueError("Invalid IPv4 address format (%s)" % addr)
+    if not netaddr.valid_ipv4(addr):  # type: ignore
+        raise AddressValueError(f"Invalid IPv4 address format ({addr})")
 
     if netaddr.IPAddress(addr).is_netmask():
-        raise NetmaskValueError("Invalid IPv4 host address (%s)" % addr)
+        raise NetmaskValueError(f"Invalid IPv4 host address ({addr})")
 
     return addr
 
@@ -134,18 +130,18 @@ def ipv4_netmask(addr: str) -> str:
     :raises AddressValueError: Raised in case ``addr`` is not a valid IPv4 address.
     :raises NetmaskValueError: Raised in case ``addr`` is not a valid IPv4 netmask.
     """
-    if not isinstance(addr, str):
+    if not isinstance(addr, str):  # type: ignore
         raise TypeError("Invalid input, addr must be a string")
     addr = addr.strip()
 
     if addr == "":
         return addr
 
-    if not netaddr.valid_ipv4(addr):
-        raise AddressValueError("Invalid IPv4 address format (%s)" % addr)
+    if not netaddr.valid_ipv4(addr):  # type: ignore
+        raise AddressValueError(f"Invalid IPv4 address format ({addr})")
 
     if not netaddr.IPAddress(addr).is_netmask():
-        raise NetmaskValueError("Invalid IPv4 netmask (%s)" % addr)
+        raise NetmaskValueError(f"Invalid IPv4 netmask ({addr})")
 
     return addr
 
@@ -159,22 +155,22 @@ def ipv6_address(addr: str) -> str:
     :raises TypeError: Raised if ``addr`` is not a string.
     :raises AddressValueError: Raised in case ``addr`` is not a valid IPv6 address.
     """
-    if not isinstance(addr, str):
+    if not isinstance(addr, str):  # type: ignore
         raise TypeError("Invalid input, addr must be a string")
     addr = addr.strip()
 
     if addr == "":
         return addr
 
-    if not netaddr.valid_ipv6(addr):
-        raise AddressValueError("Invalid IPv6 address format (%s)" % addr)
+    if not netaddr.valid_ipv6(addr):  # type: ignore
+        raise AddressValueError(f"Invalid IPv6 address format ({addr})")
 
     return addr
 
 
 def name_servers(
-    nameservers: Union[str, list], for_item: bool = True
-) -> Union[str, list]:
+    nameservers: Union[str, List[str]], for_item: bool = True
+) -> Union[str, List[str]]:
     """
     Validate nameservers IP addresses, works for IPv4 and IPv6
 
@@ -194,26 +190,24 @@ def name_servers(
         # convert string to a list; do the real validation in the isinstance(list) code block below
         nameservers = shlex.split(nameservers)
 
-    if isinstance(nameservers, list):
-        for ns in nameservers:
-            ip_version = netaddr.IPAddress(ns).version
+    if isinstance(nameservers, list):  # type: ignore
+        for name_server in nameservers:
+            ip_version = netaddr.IPAddress(name_server).version
             if ip_version == 4:
-                ipv4_address(ns)
+                ipv4_address(name_server)
             elif ip_version == 6:
-                ipv6_address(ns)
+                ipv6_address(name_server)
             else:
                 raise AddressValueError("Invalid IP address format")
     else:
-        raise TypeError(
-            "Invalid input type %s, expected str or list" % type(nameservers)
-        )
+        raise TypeError(f"Invalid input type {type(nameservers)}, expected str or list")
 
     return nameservers
 
 
 def name_servers_search(
-    search: Union[str, list], for_item: bool = True
-) -> Union[str, list]:
+    search: Union[str, List[str]], for_item: bool = True
+) -> Union[str, List[str]]:
     """
     Validate nameservers search domains.
 
@@ -232,11 +226,11 @@ def name_servers_search(
         # convert string to a list; do the real validation in the isinstance(list) code block below
         search = shlex.split(search)
 
-    if isinstance(search, list):
-        for sl in search:
-            hostname(sl)
+    if isinstance(search, list):  # type: ignore
+        for nameserver in search:
+            hostname(nameserver)
     else:
-        raise TypeError('Invalid input type "%s", expected str or list' % type(search))
+        raise TypeError(f'Invalid input type "{type(search)}", expected str or list')
 
     return search
 
@@ -249,19 +243,19 @@ def validate_breed(breed: str) -> str:
     :raises TypeError: If breed is not a str.
     :raises ValueError: If breed is not a supported breed.
     """
-    if not isinstance(breed, str):
+    if not isinstance(breed, str):  # type: ignore
         raise TypeError("breed must be of type str")
     if not breed:
         return ""
-    # FIXME: The following line will fail if load_signatures() from utils.py was not called!
-    valid_breeds = utils.get_valid_breeds()
+    # FIXME: The following line will fail if load_signatures() from utils/signatures.py was not called!
+    valid_breeds = signatures.get_valid_breeds()
     breed = breed.lower()
     if breed and breed in valid_breeds:
         return breed
     nicer = ", ".join(valid_breeds)
     raise ValueError(
-        'Invalid value for breed ("%s"). Must be one of %s, different breeds have different levels of '
-        "support!" % (breed, nicer)
+        f'Invalid value for breed ("{breed}"). Must be one of {nicer}, different breeds have different levels of '
+        "support!"
     )
 
 
@@ -273,9 +267,9 @@ def validate_os_version(os_version: str, breed: str) -> str:
     :param breed: The breed to validate the os_version for.
     """
     # Type checks
-    if not isinstance(os_version, str):
+    if not isinstance(os_version, str):  # type: ignore
         raise TypeError("os_version needs to be of type str")
-    if not isinstance(breed, str):
+    if not isinstance(breed, str):  # type: ignore
         raise TypeError("breed needs to be of type str")
     # Early bail out if we do a reset
     if not os_version or not breed:
@@ -287,19 +281,20 @@ def validate_os_version(os_version: str, breed: str) -> str:
             "The breed supplied to the validation function of os_version was not valid."
         )
     # Now check the os_version
-    # FIXME: The following line will fail if load_signatures() from utils.py was not called!
-    matched = utils.SIGNATURE_CACHE["breeds"][breed]
+    # FIXME: The following line will fail if load_signatures() from utils/signatures.py was not called!
+    matched = signatures.signature_cache["breeds"][breed]
     os_version = os_version.lower()
     if os_version not in matched:
         nicer = ", ".join(matched)
         raise ValueError(
-            'os_version for breed "%s" must be one of %s, given was "%s"'
-            % (breed, nicer, os_version)
+            f'os_version for breed "{breed}" must be one of {nicer}, given was "{os_version}"'
         )
     return os_version
 
 
-def validate_repos(repos: list, api, bypass_check: bool = False):
+def validate_repos(
+    repos: Union[List[str], str], api: "CobblerAPI", bypass_check: bool = False
+) -> Union[List[str], str]:
     """
     This is a setter for the repository.
 
@@ -312,20 +307,21 @@ def validate_repos(repos: list, api, bypass_check: bool = False):
         return enums.VALUE_INHERITED
 
     # store as an array regardless of input type
-    if repos is None:
+    if repos is None:  # type: ignore
         repos = []
     else:
         # TODO: Don't store the names. Store the internal references.
-        repos = utils.input_string_or_list(repos)
+        # repos are not allowed to be inherited atm
+        repos = api.input_string_or_list_no_inherit(repos)
     if not bypass_check:
-        for r in repos:
+        for repo in repos:
             # FIXME: First check this and then set the repos if the bypass check is used.
-            if api.repos().find(name=r) is None:
-                raise ValueError("repo %s is not defined" % r)
+            if api.repos().find(name=repo) is None:
+                raise ValueError(f"repo {repo} is not defined")
     return repos
 
 
-def validate_virt_file_size(num: Union[str, float]):
+def validate_virt_file_size(num: Union[str, int, float]) -> Union[str, float]:
     """
     For Virt only: Specifies the size of the virt image in gigabytes. Older versions of koan (x<0.6.3) interpret 0 as
     "don't care". Newer versions (x>=0.6.4) interpret 0 as "no disks"
@@ -353,22 +349,24 @@ def validate_virt_file_size(num: Union[str, float]):
         num = float(num)
     if isinstance(num, int):
         num = float(num)
-    if not isinstance(num, float):
+    if not isinstance(num, float):  # type: ignore
         raise TypeError("virt_file_size needs to be a float")
     if num < 0:
-        raise ValueError("invalid virt_file_size (%s)" % num)
+        raise ValueError(f"invalid virt_file_size ({num})")
     return num
 
 
-def validate_virt_auto_boot(value: bool) -> bool:
+def validate_virt_auto_boot(value: Union[str, bool, int]) -> Union[bool, str]:
     """
     For Virt only.
     Specifies whether the VM should automatically boot upon host reboot 0 tells Koan not to auto_boot virtuals.
 
     :param value: May be True or False.
     """
-    value = utils.input_boolean(value)
-    if not isinstance(value, bool):
+    if value == enums.VALUE_INHERITED:
+        return enums.VALUE_INHERITED
+    value = input_converters.input_boolean(value)
+    if not isinstance(value, bool):  # type: ignore
         raise TypeError("virt_auto_boot needs to be of type bool.")
     return value
 
@@ -381,8 +379,8 @@ def validate_virt_pxe_boot(value: bool) -> bool:
     :param value: May be True or False.
     :return: True or False
     """
-    value = utils.input_boolean(value)
-    if not isinstance(value, bool):
+    value = input_converters.input_boolean(value)
+    if not isinstance(value, bool):  # type: ignore
         raise TypeError("virt_pxe_boot needs to be of type bool.")
     return value
 
@@ -395,7 +393,7 @@ def validate_virt_ram(value: Union[int, str]) -> Union[str, int]:
     :param value: 0 tells Koan to just choose a reasonable default.
     :returns: An integer in all cases, except when ``value`` is the magic inherit string.
     """
-    if not isinstance(value, (str, int)):
+    if not isinstance(value, (str, int)):  # type: ignore
         raise TypeError("virt_ram must be of type int or the str '<<inherit>>'!")
 
     if isinstance(value, str):
@@ -412,7 +410,6 @@ def validate_virt_ram(value: Union[int, str]) -> Union[str, int]:
     if interger_number < 0:
         raise ValueError(
             "The virt_ram needs to have a value greater or equal to zero. Zero means default RAM."
-            % str(value)
         )
     return interger_number
 
@@ -424,21 +421,21 @@ def validate_virt_bridge(vbridge: str) -> str:
     :param vbridge: The bridgename to set for the object.
     :raises TypeError: In case vbridge was not of type str.
     """
-    if not isinstance(vbridge, str):
+    if not isinstance(vbridge, str):  # type: ignore
         raise TypeError("vbridge must be of type str.")
     if not vbridge:
         return enums.VALUE_INHERITED
     return vbridge
 
 
-def validate_virt_path(path: str, for_system: bool = False):
+def validate_virt_path(path: str, for_system: bool = False) -> str:
     """
     Virtual storage location suggestion, can be overriden by koan.
 
     :param path: The path to the storage.
     :param for_system: If this is set to True then the value is inherited from a profile.
     """
-    if not isinstance(path, str):
+    if not isinstance(path, str):  # type: ignore
         raise TypeError("Field virt_path needs to be of type str!")
     if for_system:
         if path == "":
@@ -463,7 +460,7 @@ def validate_virt_cpus(num: Union[str, int]) -> int:
         if not utils.is_str_int(num):
             raise TypeError("virt_cpus needs to be an integer")
         num = int(num)
-    if not isinstance(num, int):
+    if not isinstance(num, int):  # type: ignore
         raise TypeError("virt_cpus needs to be an integer")
     if num < 0:
         raise ValueError("virt_cpus needs to be 0 or greater")
@@ -481,7 +478,7 @@ def validate_serial_device(value: Union[str, int]) -> int:
         if not utils.is_str_int(value):
             raise TypeError("serial_device needs to be an integer")
         value = int(value)
-    if not isinstance(value, int):
+    if not isinstance(value, int):  # type: ignore
         raise TypeError("serial_device needs to be an integer")
     if value < -1:
         raise ValueError("serial_device needs to be -1 or greater")
@@ -498,7 +495,7 @@ def validate_serial_baud_rate(
     :param baud_rate: The baud rate to set.
     :return: The validated baud rate.
     """
-    if not isinstance(baud_rate, (int, str, enums.BaudRates)):
+    if not isinstance(baud_rate, (int, str, enums.BaudRates)):  # type: ignore
         raise TypeError("serial baud rate needs to be of type int or enums.BaudRates")
     # Convert the baud rate which came in as an int or str
     if isinstance(baud_rate, (int, str)):
@@ -509,11 +506,11 @@ def validate_serial_baud_rate(
                 baud_rate = enums.BaudRates["B" + str(baud_rate)]
         except KeyError as key_error:
             raise ValueError(
-                "vtype choices include: %s" % list(map(str, enums.BaudRates))
+                f"vtype choices include: {list(map(str, enums.BaudRates))}"
             ) from key_error
     # Now it must be of the enum Type
     if baud_rate not in enums.BaudRates:
-        raise ValueError("invalid value for serial baud Rate (%s)" % baud_rate)
+        raise ValueError(f"invalid value for serial baud Rate ({baud_rate})")
     return baud_rate
 
 
@@ -524,7 +521,7 @@ def validate_boot_remote_file(value: str) -> bool:
     :param value: Must be a valid URI starting with http or tftp. ftp is not supported and thus invalid.
     :return: False in any case. If value is valid, ``True`` is returned.
     """
-    if not isinstance(value, str):
+    if not isinstance(value, str):  # type: ignore
         return False
     parsed_url = urlparse(value)
     # Check that it starts with http / tftp
@@ -553,7 +550,7 @@ def validate_grub_remote_file(value: str) -> bool:
     :param value: Must be a valid grub formatted URI starting with http or tftp. ftp is not supported and thus invalid.
     :return: False in any case. If value is valid, ``True`` is returned.
     """
-    if not isinstance(value, str):
+    if not isinstance(value, str):  # type: ignore
         return False
     # Format: "(%s,%s)/%s" % (prot, server, path)
     grub_match_result = RE_URL_GRUB.match(value)
@@ -564,9 +561,9 @@ def validate_grub_remote_file(value: str) -> bool:
         # FIXME: Disallow invalid port specifications in the URL
         success_server_ip = netaddr.valid_ipv4(server) or netaddr.valid_ipv6(server)
         # FIXME: Disallow invalid URLs (e.g.: underscore in URL)
-        success_server_name = urlparse("https://%s" % server).netloc == server
+        success_server_name = urlparse(f"https://{server}").netloc == server
         path = grub_match_result.group("path")
-        success_path = urlparse("https://fake.local/%s" % path).path[1:] == path
+        success_path = urlparse(f"https://fake.local/{path}").path[1:] == path
         success = (success_server_ip or success_server_name) and success_path
     return success
 
@@ -579,7 +576,7 @@ def validate_autoinstall_script_name(name: str) -> bool:
     :param name: The name of the script. Will end up being a filename. May have an extension but should never be a path.
     :return: If this is a valid script name or not.
     """
-    if not isinstance(name, str):
+    if not isinstance(name, str):  # type: ignore
         return False
     if re.fullmatch(RE_SCRIPT_NAME, name):
         return True
@@ -593,7 +590,7 @@ def validate_uuid(possible_uuid: str) -> bool:
     :param possible_uuid: The str with the UUID.
     :return: True in case it is one, False otherwise.
     """
-    if not isinstance(possible_uuid, str):
+    if not isinstance(possible_uuid, str):  # type: ignore
         return False
     # Taken from: https://stackoverflow.com/a/33245493/4730773
     try:
@@ -610,7 +607,7 @@ def validate_obj_type(object_type: str) -> bool:
     :param object_type: The str with the object type to validate.
     :return: True in case it is one, False in all other cases.
     """
-    if not isinstance(object_type, str):
+    if not isinstance(object_type, str):  # type: ignore
         return False
     return object_type in [
         "distro",
@@ -618,9 +615,6 @@ def validate_obj_type(object_type: str) -> bool:
         "system",
         "repo",
         "image",
-        "mgmtclass",
-        "package",
-        "file",
         "menu",
     ]
 
@@ -632,21 +626,6 @@ def validate_obj_name(object_name: str) -> bool:
     :param object_name: The object name candidate.
     :return: True in case it matches the RE_OBJECT_NAME regex, False in all other cases.
     """
-    if not isinstance(object_name, str):
+    if not isinstance(object_name, str):  # type: ignore
         return False
-    return bool(re.fullmatch(item.RE_OBJECT_NAME, object_name))
-
-
-def validate_obj_id(object_id: str) -> bool:
-    """
-    This validates a possible object ID against its Cobbler specific object id schema.
-
-    :param object_id: The possible object id candidate.
-    :return: True in case it is one, False otherwise.
-    """
-    if not isinstance(object_id, str):
-        return False
-    if object_id.startswith("___NEW___"):
-        object_id = object_id[9:]
-    (otype, oname) = object_id.split("::", 1)
-    return validate_obj_type(otype) and validate_obj_name(oname)
+    return bool(re.fullmatch(base_item.RE_OBJECT_NAME, object_name))

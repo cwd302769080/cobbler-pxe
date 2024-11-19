@@ -1,33 +1,181 @@
 """
-Copyright 2006-2009, Red Hat, Inc and Others
-Michael DeHaan <michael.dehaan AT gmail>
+Cobbler module that contains the code for a Cobbler profile object.
 
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
+Changelog:
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+V3.4.0 (unreleased):
+    * Changes:
+        * Constructor: ``kwargs`` can now be used to seed the item during creation.
+        * ``children``: The property was moved to the base class.
+        * ``parent``: The property was moved to the base class.
+        * ``from_dict()``: The method was moved to the base class.
+V3.3.4 (unreleased):
+    * No changes
+V3.3.3:
+    * Changed:
+        * ``next_server_v4``: str -> enums.VALUE_INHERITED
+        * ``next_server_v6``: str -> enums.VALUE_INHERITED
+        * ``virt_bridge``: str -> enums.VALUE_INHERITED
+        * ``virt_file_size``: int -> enums.VALUE_INHERITED
+        * ``virt_ram``: int -> enums.VALUE_INHERITED
+V3.3.2:
+    * No changes
+V3.3.1:
+    * No changes
+V3.3.0:
+    * This release switched from pure attributes to properties (getters/setters).
+    * Added:
+        * ``boot_loaders``: Union[list, str]
+        * ``enable_ipxe``: bool
+        * ``next_server_v4``: str
+        * ``next_server_v6``: str
+        * ``menu``: str
+        * ``from_dict()``
+    * Removed:
+        * ``enable_gpxe``: Union[bool, SETTINGS:enable_gpxe]
+        * ``next_server``: Union[str, inherit]
+        * ``get_fields()``
+        * ``get_parent()``: Please use the property ``parent`` instead
+        * ``set_parent()``: Please use the property ``parent`` instead
+        * ``set_distro()``: Please use the property ``distro`` instead
+        * ``set_name_servers()``: Please use the property ``name_servers`` instead
+        * ``set_name_servers_search()``: Please use the property ``name_servers_search`` instead
+        * ``set_proxy()``: Please use the property ``proxy`` instead
+        * ``set_enable_gpxe()``: Please use the property ``enable_gpxe`` instead
+        * ``set_enable_menu()``: Please use the property ``enable_menu`` instead
+        * ``set_dhcp_tag()``: Please use the property ``dhcp_tag`` instead
+        * ``set_server()``: Please use the property ``server`` instead
+        * ``set_next_server()``: Please use the property ``next_server`` instead
+        * ``set_filename()``: Please use the property ``filename`` instead
+        * ``set_autoinstall()``: Please use the property ``autoinstall`` instead
+        * ``set_virt_auto_boot()``: Please use the property ``virt_auto_boot`` instead
+        * ``set_virt_cpus()``: Please use the property ``virt_cpus`` instead
+        * ``set_virt_file_size()``: Please use the property ``virt_file_size`` instead
+        * ``set_virt_disk_driver()``: Please use the property ``virt_disk_driver`` instead
+        * ``set_virt_ram()``: Please use the property ``virt_ram`` instead
+        * ``set_virt_type()``: Please use the property ``virt_type`` instead
+        * ``set_virt_bridge()``: Please use the property ``virt_bridge`` instead
+        * ``set_virt_path()``: Please use the property ``virt_path`` instead
+        * ``set_repos()``: Please use the property ``repos`` instead
+        * ``set_redhat_management_key()``: Please use the property ``redhat_management_key`` instead
+        * ``get_redhat_management_key()``: Please use the property ``redhat_management_key`` instead
+        * ``get_arch()``: Please use the property ``arch`` instead
+    * Changed:
+        * ``autoinstall``: Union[str, SETTINGS:default_kickstart] -> enums.VALUE_INHERITED
+        * ``enable_menu``: Union[bool, SETTINGS:enable_menu] -> bool
+        * ``name_servers``: Union[list, SETTINGS:default_name_servers] -> list
+        * ``name_servers_search``: Union[list, SETTINGS:default_name_servers_search] -> list
+        * ``filename``: Union[str, inherit] -> str
+        * ``proxy``: Union[str, SETTINGS:proxy_url_int] -> enums.VALUE_INHERITED
+        * ``redhat_management_key``: Union[str, inherit] -> enums.VALUE_INHERITED
+        * ``server``: Union[str, inherit] -> enums.VALUE_INHERITED
+        * ``virt_auto_boot``: Union[bool, SETTINGS:virt_auto_boot] -> bool
+        * ``virt_bridge``: Union[str, SETTINGS:default_virt_bridge] -> str
+        * ``virt_cpus``: int -> Union[int, str]
+        * ``virt_disk_driver``: Union[str, SETTINGS:default_virt_disk_driver] -> enums.VirtDiskDrivers
+        * ``virt_file_size``: Union[int, SETTINGS:default_virt_file_size] -> int
+        * ``virt_ram``: Union[int, SETTINGS:default_virt_ram] -> int
+        * ``virt_type``: Union[str, SETTINGS:default_virt_type] -> enums.VirtType
+        * ``boot_files``: list/dict? -> enums.VALUE_INHERITED
+        * ``fetchable_files``: dict -> enums.VALUE_INHERITED
+        * ``autoinstall_meta``: dict -> enums.VALUE_INHERITED
+        * ``kernel_options``: dict -> enums.VALUE_INHERITED
+        * ``kernel_options_post``: dict -> enums.VALUE_INHERITED
+        * mgmt_classes: list -> enums.VALUE_INHERITED
+        * ``mgmt_parameters``: Union[str, inherit] -> enums.VALUE_INHERITED
+        (``mgmt_classes`` parameter has a duplicate)
+V3.2.2:
+    * No changes
+V3.2.1:
+    * Added:
+        * ``kickstart``: Resolves as a proxy to ``autoinstall``
+V3.2.0:
+    * No changes
+V3.1.2:
+    * Added:
+        * ``filename``: Union[str, inherit]
+V3.1.1:
+    * No changes
+V3.1.0:
+    * Added:
+        * ``get_arch()``
+V3.0.1:
+    * File was moved from ``cobbler/item_profile.py`` to ``cobbler/items/profile.py``.
+V3.0.0:
+    * Added:
+        * ``next_server``: Union[str, inherit]
+    * Changed:
+        * Renamed: ``kickstart`` -> ``autoinstall``
+        * Renamed: ``ks_meta`` -> ``autoinstall_meta``
+        * ``autoinstall``: Union[str, SETTINGS:default_kickstart] -> Union[str, SETTINGS:default_autoinstall]
+        * ``set_kickstart()``: Renamed to ``set_autoinstall()``
+    * Removed:
+        * ``redhat_management_server``: Union[str, inherit]
+        * ``template_remote_kickstarts``: Union[bool, SETTINGS:template_remote_kickstarts]
+        * ``set_redhat_management_server()``
+        * ``set_template_remote_kickstarts()``
+V2.8.5:
+    * Inital tracking of changes for the changelog.
+    * Added
+        * ``ctime``: int
+        * ``depth``: int
+        * ``mtime``: int
+        * ``uid``: str
 
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
-02110-1301  USA
+        * ``kickstart``: Union[str, SETTINGS:default_kickstart]
+        * ``ks_meta``: dict
+        * ``boot_files``: list/dict?
+        * ``comment``: str
+        * ``dhcp_tag``: str
+        * ``distro``: str
+        * ``enable_gpxe``: Union[bool, SETTINGS:enable_gpxe]
+        * ``enable_menu``: Union[bool, SETTINGS:enable_menu]
+        * ``fetchable_files``: dict
+        * ``kernel_options``: dict
+        * ``kernel_options_post``: dict
+        * ``mgmt_classes``: list
+        * ``mgmt_parameters``: Union[str, inherit]
+        * ``name``: str
+        * ``name_servers``: Union[list, SETTINGS:default_name_servers]
+        * ``name_servers_search``: Union[list, SETTINGS:default_name_servers_search]
+        * ``owners``: Union[list, SETTINGS:default_ownership]
+        * ``parent``: str
+        * ``proxy``: Union[str, SETTINGS:proxy_url_int]
+        * ``redhat_management_key``: Union[str, inherit]
+        * ``redhat_management_server``: Union[str, inherit]
+        * ``template_remote_kickstarts``: Union[bool, SETTINGS:template_remote_kickstarts]
+        * ``repos``: list
+        * ``server``: Union[str, inherit]
+        * ``template_files``: dict
+        * ``virt_auto_boot``: Union[bool, SETTINGS:virt_auto_boot]
+        * ``virt_bridge``: Union[str, SETTINGS:default_virt_bridge]
+        * ``virt_cpus``: int
+        * ``virt_disk_driver``: Union[str, SETTINGS:default_virt_disk_driver]
+        * ``virt_file_size``: Union[int, SETTINGS:default_virt_file_size]
+        * ``virt_path``: str
+        * ``virt_ram``: Union[int, SETTINGS:default_virt_ram]
+        * ``virt_type``: Union[str, SETTINGS:default_virt_type]
 """
-import uuid
-from typing import Optional, Union
 
-from cobbler import autoinstall_manager
-from cobbler.items import item
-from cobbler import utils, validate, enums
+# SPDX-License-Identifier: GPL-2.0-or-later
+# SPDX-FileCopyrightText: Copyright 2006-2009, Red Hat, Inc and Others
+# SPDX-FileCopyrightText: Michael DeHaan <michael.dehaan AT gmail>
+
+import copy
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+
+from cobbler import autoinstall_manager, enums, validate
 from cobbler.cexceptions import CX
+from cobbler.decorator import InheritableProperty, LazyProperty
+from cobbler.items.abstract.bootable_item import BootableItem
 from cobbler.items.distro import Distro
+from cobbler.utils import input_converters
+
+if TYPE_CHECKING:
+    from cobbler.api import CobblerAPI
 
 
-class Profile(item.Item):
+class Profile(BootableItem):
     """
     A Cobbler profile object.
     """
@@ -35,64 +183,70 @@ class Profile(item.Item):
     TYPE_NAME = "profile"
     COLLECTION_TYPE = "profile"
 
-    def __init__(self, api, *args, **kwargs):
+    def __init__(self, api: "CobblerAPI", *args: Any, **kwargs: Any) -> None:
         """
+        Constructor
 
         :param api: The Cobbler API object which is used for resolving information.
-        :param args:
-        :param kwargs:
         """
-        super().__init__(api, *args, **kwargs)
-        self._template_files = {}
+        super().__init__(api)
+        # Prevent attempts to clear the to_dict cache before the object is initialized.
+        self._has_initialized = False
+
         self._autoinstall = enums.VALUE_INHERITED
-        self._boot_loaders: Union[list, str] = enums.VALUE_INHERITED
+        self._boot_loaders: Union[List[str], str] = enums.VALUE_INHERITED
         self._dhcp_tag = ""
         self._distro = ""
-        self._enable_ipxe = api.settings().enable_ipxe
-        self._enable_menu = api.settings().enable_menu
-        self._name_servers = api.settings().default_name_servers
-        self._name_servers_search = api.settings().default_name_servers_search
+        self._enable_ipxe: Union[str, bool] = enums.VALUE_INHERITED
+        self._enable_menu: Union[str, bool] = enums.VALUE_INHERITED
+        self._name_servers = enums.VALUE_INHERITED
+        self._name_servers_search = enums.VALUE_INHERITED
         self._next_server_v4 = enums.VALUE_INHERITED
         self._next_server_v6 = enums.VALUE_INHERITED
         self._filename = ""
         self._proxy = enums.VALUE_INHERITED
         self._redhat_management_key = enums.VALUE_INHERITED
-        self._repos = []
+        self._repos: Union[List[str], str] = []
         self._server = enums.VALUE_INHERITED
         self._menu = ""
-        self._virt_auto_boot = api.settings().virt_auto_boot
+        self._display_name = ""
+        self._virt_auto_boot: Union[str, bool] = enums.VALUE_INHERITED
         self._virt_bridge = enums.VALUE_INHERITED
-        self._virt_cpus: Union[int, str] = 1
-        self._virt_disk_driver = enums.VirtDiskDrivers.INHERITED
-        self._virt_file_size = enums.VALUE_INHERITED
+        self._virt_cpus: int = 1
+        self._virt_disk_driver: enums.VirtDiskDrivers = enums.VirtDiskDrivers.INHERITED
+        self._virt_file_size: Union[str, float] = enums.VALUE_INHERITED
         self._virt_path = ""
-        self._virt_ram = enums.VALUE_INHERITED
-        self._virt_type = enums.VirtType.AUTO
+        self._virt_ram: Union[str, int] = enums.VALUE_INHERITED
+        self._virt_type: Union[str, enums.VirtType] = enums.VirtType.INHERITED
 
-        # Overwrite defaults from item.py
-        self._boot_files = enums.VALUE_INHERITED
-        self._fetchable_files = enums.VALUE_INHERITED
-        self._autoinstall_meta = enums.VALUE_INHERITED
-        self._kernel_options = enums.VALUE_INHERITED
-        self._kernel_options_post = enums.VALUE_INHERITED
-        self._mgmt_classes = enums.VALUE_INHERITED
-        self._mgmt_parameters = enums.VALUE_INHERITED
+        # Overwrite defaults from bootable_item.py
+        self._autoinstall_meta: Union[Dict[Any, Any], str] = enums.VALUE_INHERITED
+        self._kernel_options: Union[Dict[Any, Any], str] = enums.VALUE_INHERITED
+        self._kernel_options_post: Union[Dict[Any, Any], str] = enums.VALUE_INHERITED
+
+        if self._is_subobject:
+            self._filename = enums.VALUE_INHERITED
 
         # Use setters to validate settings
         self.virt_disk_driver = api.settings().default_virt_disk_driver
         self.virt_type = api.settings().default_virt_type
 
-    def __getattr__(self, name):
+        if len(kwargs) > 0:
+            self.from_dict(kwargs)
+        if not self._has_initialized:
+            self._has_initialized = True
+
+    def __getattr__(self, name: str) -> Any:
         if name == "kickstart":
             return self.autoinstall
-        elif name == "ks_meta":
+        if name == "ks_meta":
             return self.autoinstall_meta
         raise AttributeError(
-            'Attribute "%s" did not exist on object type Profile.' % name
+            f'Attribute "{name}" did not exist on object type Profile.'
         )
 
     #
-    # override some base class methods first (item.Item)
+    # override some base class methods first (BootableItem)
     #
 
     def make_clone(self):
@@ -101,11 +255,9 @@ class Profile(item.Item):
 
         :return: The cloned instance of this object.
         """
-        _dict = self.to_dict()
-        cloned = Profile(self.api)
-        cloned.from_dict(_dict)
-        cloned.uid = uuid.uuid4().hex
-        return cloned
+        _dict = copy.deepcopy(self.to_dict())
+        _dict.pop("uid", None)
+        return Profile(self.api, **_dict)
 
     def check_if_valid(self):
         """
@@ -115,97 +267,53 @@ class Profile(item.Item):
         """
         # name validation
         super().check_if_valid()
+        if not self.inmemory:
+            return
 
         # distro validation
         distro = self.get_conceptual_parent()
         if distro is None:
-            raise CX("Error with profile %s - distro is required" % self.name)
+            raise CX(f"Error with profile {self.name} - distro is required")
 
-    def from_dict(self, dictionary: dict):
+    def find_match_single_key(
+        self, data: Dict[str, Any], key: str, value: Any, no_errors: bool = False
+    ) -> bool:
         """
-        Initializes the object with attributes from the dictionary.
+        Look if the data matches or not. This is an alternative for ``find_match()``.
 
-        :param dictionary: The dictionary with values.
+        :param data: The data to search through.
+        :param key: The key to look for int the item.
+        :param value: The value for the key.
+        :param no_errors: How strict this matching is.
+        :return: Whether the data matches or not.
         """
-        if "name" in dictionary:
-            self.name = dictionary["name"]
-        if "parent" in dictionary:
-            self.parent = dictionary["parent"]
-        if "distro" in dictionary:
-            self.distro = dictionary["distro"]
-        self._remove_depreacted_dict_keys(dictionary)
-        super().from_dict(dictionary)
+        # special case for profile, since arch is a derived property from the parent distro
+        if key == "arch":
+            if self.arch:
+                return self.arch.value == value
+            return value is None
+
+        return super().find_match_single_key(data, key, value, no_errors)
 
     #
     # specific methods for item.Profile
     #
 
     @property
-    def parent(self) -> Optional[item.Item]:
-        r"""
-        Instead of a ``--distro``, set the parent of this object to another profile and use the values from the parent
-        instead of this one where the values for this profile aren't filled in, and blend them together where they
-        are dictionaries. Basically this enables profile inheritance. To use this, the object MUST have been
-        constructed with ``is_subobject=True`` or the default values for everything will be screwed up and this will
-        likely NOT work. So, API users -- make sure you pass ``is_subobject=True`` into the constructor when using this.
-
-        Return object next highest up the tree. If this property is not set it falls back to the value of the
-        ``distro``. In case neither distro nor parent is set, it returns None (which would make the profile invalid).
-
-        :getter: The parent object which can be either another profile, a distro or None in case the object could not be
-                 resolved.
-        :setter: The name of the parent object. Might throw a ``CX`` in case the object could not be found.
-        """
-        if not self._parent:
-            parent = self.distro
-            if parent is None:
-                return None
-            return parent
-        else:
-            result = self.api.profiles().find(name=self._parent)
-        return result
-
-    @parent.setter
-    def parent(self, parent: str):
-        r"""
-        Setter for the ``parent`` property.
-
-        :param parent: The name of the parent object.
-        :raises CX: In case self parentage is found or the profile given could not be found.
-        """
-        old_parent = self.parent
-        if isinstance(old_parent, item.Item) and self.name in old_parent.children:
-            old_parent.children.remove(self.name)
-        if not parent:
-            self._parent = ""
-            return
-        if parent == self.name:
-            # check must be done in two places as setting parent could be called before/after setting name...
-            raise CX("self parentage is weird")
-        found = self.api.profiles().find(name=parent)
-        if found is None:
-            raise CX('profile "%s" not found, inheritance not possible' % parent)
-        self._parent = parent
-        self.depth = found.depth + 1
-        new_parent = self.parent
-        if isinstance(new_parent, item.Item) and self.name not in new_parent.children:
-            new_parent.children.append(self.name)
-
-    @property
-    def arch(self):
+    def arch(self) -> Optional[enums.Archs]:
         """
         This represents the architecture of a profile. It is read only.
 
         :getter: ``None`` or the parent architecture.
         """
         # FIXME: This looks so wrong. It cries: Please open a bug for me!
-        parent = self.parent
-        if parent:
+        parent = self.logical_parent
+        if parent is not None and isinstance(parent, (Profile, Distro)):
             return parent.arch
         return None
 
-    @property
-    def distro(self):
+    @LazyProperty
+    def distro(self) -> Optional["Distro"]:
         """
         The parent distro of a profile. This is not representing the Distro but the id of it.
 
@@ -215,7 +323,10 @@ class Profile(item.Item):
         """
         if not self._distro:
             return None
-        return self.api.distros().find(name=self._distro)
+        parent_distro = self.api.distros().find(name=self._distro)
+        if isinstance(parent_distro, list):
+            raise ValueError("Ambigous parent distro name detected!")
+        return parent_distro
 
     @distro.setter
     def distro(self, distro_name: str):
@@ -224,26 +335,25 @@ class Profile(item.Item):
 
         :param distro_name: The name of the distro.
         """
-        if not isinstance(distro_name, str):
+        if not isinstance(distro_name, str):  # type: ignore
             raise TypeError("distro_name needs to be of type str")
+        items = self.api.profiles()
+        old_distro = self._distro
         if not distro_name:
             self._distro = ""
+            items.update_index_value(self, "distro", old_distro, "")
             return
         distro = self.api.distros().find(name=distro_name)
-        if distro is None:
-            raise ValueError('distribution "%s" not found' % distro_name)
-        old_parent = self.parent
-        if isinstance(old_parent, item.Item) and self.name in old_parent.children:
-            old_parent.children.remove(self.name)
+        if distro is None or isinstance(distro, list):
+            raise ValueError(f'distribution "{distro_name}" not found')
         self._distro = distro_name
         self.depth = (
             distro.depth + 1
         )  # reset depth if previously a subprofile and now top-level
-        if self.name not in distro.children:
-            distro.children.append(self.name)
+        items.update_index_value(self, "distro", old_distro, distro_name)
 
-    @property
-    def name_servers(self) -> list:
+    @InheritableProperty
+    def name_servers(self) -> List[str]:
         """
         Represents the list of nameservers to set for the profile.
 
@@ -252,8 +362,8 @@ class Profile(item.Item):
         """
         return self._resolve("name_servers")
 
-    @name_servers.setter
-    def name_servers(self, data: list):
+    @name_servers.setter  # type: ignore[no-redef]
+    def name_servers(self, data: List[str]):
         """
         Set the DNS servers.
 
@@ -261,8 +371,8 @@ class Profile(item.Item):
         """
         self._name_servers = validate.name_servers(data)
 
-    @property
-    def name_servers_search(self) -> list:
+    @InheritableProperty
+    def name_servers_search(self) -> List[str]:
         """
         Represents the list of DNS search paths.
 
@@ -271,8 +381,8 @@ class Profile(item.Item):
         """
         return self._resolve("name_servers_search")
 
-    @name_servers_search.setter
-    def name_servers_search(self, data: list):
+    @name_servers_search.setter  # type: ignore[no-redef]
+    def name_servers_search(self, data: List[str]):
         """
         Set the DNS search paths.
 
@@ -280,7 +390,7 @@ class Profile(item.Item):
         """
         self._name_servers_search = validate.name_servers_search(data)
 
-    @property
+    @InheritableProperty
     def proxy(self) -> str:
         """
         Override the default external proxy which is used for accessing the internet.
@@ -290,7 +400,7 @@ class Profile(item.Item):
         """
         return self._resolve("proxy_url_int")
 
-    @proxy.setter
+    @proxy.setter  # type: ignore[no-redef]
     def proxy(self, proxy: str):
         """
         Setter for the proxy setting of the repository.
@@ -298,11 +408,11 @@ class Profile(item.Item):
         :param proxy: The new proxy which will be used for the repository.
         :raises TypeError: In case the new value is not of type ``str``.
         """
-        if not isinstance(proxy, str):
+        if not isinstance(proxy, str):  # type: ignore
             raise TypeError("Field proxy of object profile needs to be of type str!")
         self._proxy = proxy
 
-    @property
+    @InheritableProperty
     def enable_ipxe(self) -> bool:
         r"""
         Sets whether or not the profile will use iPXE for booting.
@@ -312,20 +422,24 @@ class Profile(item.Item):
         """
         return self._resolve("enable_ipxe")
 
-    @enable_ipxe.setter
-    def enable_ipxe(self, enable_ipxe: bool):
+    @enable_ipxe.setter  # type: ignore[no-redef]
+    def enable_ipxe(self, enable_ipxe: Union[str, bool]):
         r"""
         Setter for the ``enable_ipxe`` property.
 
         :param enable_ipxe: New boolean value for enabling iPXE.
         :raises TypeError: In case after the conversion, the new value is not of type ``bool``.
         """
-        enable_ipxe = utils.input_boolean(enable_ipxe)
-        if not isinstance(enable_ipxe, bool):
+        if enable_ipxe == enums.VALUE_INHERITED:
+            self._enable_ipxe = enums.VALUE_INHERITED
+            return
+
+        enable_ipxe = input_converters.input_boolean(enable_ipxe)
+        if not isinstance(enable_ipxe, bool):  # type: ignore
             raise TypeError("enable_ipxe needs to be of type bool")
         self._enable_ipxe = enable_ipxe
 
-    @property
+    @InheritableProperty
     def enable_menu(self) -> bool:
         """
         Sets whether or not the profile will be listed in the default PXE boot menu. This is pretty forgiving for
@@ -336,20 +450,24 @@ class Profile(item.Item):
         """
         return self._resolve("enable_menu")
 
-    @enable_menu.setter
-    def enable_menu(self, enable_menu: bool):
+    @enable_menu.setter  # type: ignore[no-redef]
+    def enable_menu(self, enable_menu: Union[str, bool]):
         """
         Setter for the ``enable_menu`` property.
 
         :param enable_menu: New boolean value for enabling the menu.
         :raises TypeError: In case the boolean could not be converted successfully.
         """
-        enable_menu = utils.input_boolean(enable_menu)
-        if not isinstance(enable_menu, bool):
+        if enable_menu == enums.VALUE_INHERITED:
+            self._enable_menu = enums.VALUE_INHERITED
+            return
+
+        enable_menu = input_converters.input_boolean(enable_menu)
+        if not isinstance(enable_menu, bool):  # type: ignore
             raise TypeError("enable_menu needs to be of type bool")
         self._enable_menu = enable_menu
 
-    @property
+    @LazyProperty
     def dhcp_tag(self) -> str:
         """
         Represents the VLAN tag the DHCP Server is in/answering to.
@@ -367,11 +485,11 @@ class Profile(item.Item):
         :param dhcp_tag: The new VLAN tag.
         :raises TypeError: Raised in case the tag was not of type ``str``.
         """
-        if not isinstance(dhcp_tag, str):
+        if not isinstance(dhcp_tag, str):  # type: ignore
             raise TypeError("Field dhcp_tag of object profile needs to be of type str!")
         self._dhcp_tag = dhcp_tag
 
-    @property
+    @InheritableProperty
     def server(self) -> str:
         """
         Represents the hostname the Cobbler server is reachable by a client.
@@ -383,7 +501,7 @@ class Profile(item.Item):
         """
         return self._resolve("server")
 
-    @server.setter
+    @server.setter  # type: ignore[no-redef]
     def server(self, server: str):
         """
         Setter for the server property.
@@ -391,11 +509,11 @@ class Profile(item.Item):
         :param server: The str with the new value for the server property.
         :raises TypeError: In case the new value was not of type ``str``.
         """
-        if not isinstance(server, str):
+        if not isinstance(server, str):  # type: ignore
             raise TypeError("Field server of object profile needs to be of type str!")
         self._server = server
 
-    @property
+    @InheritableProperty
     def next_server_v4(self) -> str:
         """
         Represents the next server for IPv4.
@@ -403,7 +521,7 @@ class Profile(item.Item):
         :getter: The IP for the next server.
         :setter: May raise a ``TypeError`` if the new value is not of type ``str``.
         """
-        return self._next_server_v4
+        return self._resolve("next_server_v4")
 
     @next_server_v4.setter
     def next_server_v4(self, server: str = ""):
@@ -413,14 +531,14 @@ class Profile(item.Item):
         :param server: The address of the IPv4 next server. Must be a string or ``enums.VALUE_INHERITED``.
         :raises TypeError: In case server is no string.
         """
-        if not isinstance(server, str):
+        if not isinstance(server, str):  # type: ignore
             raise TypeError("Server must be a string.")
         if server == enums.VALUE_INHERITED:
             self._next_server_v4 = enums.VALUE_INHERITED
         else:
             self._next_server_v4 = validate.ipv4_address(server)
 
-    @property
+    @InheritableProperty
     def next_server_v6(self) -> str:
         r"""
         Represents the next server for IPv6.
@@ -428,7 +546,7 @@ class Profile(item.Item):
         :getter: The IP for the next server.
         :setter: May raise a ``TypeError`` if the new value is not of type ``str``.
         """
-        return self._next_server_v6
+        return self._resolve("next_server_v6")
 
     @next_server_v6.setter
     def next_server_v6(self, server: str = ""):
@@ -438,24 +556,26 @@ class Profile(item.Item):
         :param server: The address of the IPv6 next server. Must be a string or ``enums.VALUE_INHERITED``.
         :raises TypeError: In case server is no string.
         """
-        if not isinstance(server, str):
+        if not isinstance(server, str):  # type: ignore
             raise TypeError("Server must be a string.")
         if server == enums.VALUE_INHERITED:
             self._next_server_v6 = enums.VALUE_INHERITED
         else:
             self._next_server_v6 = validate.ipv6_address(server)
 
-    @property
+    @InheritableProperty
     def filename(self) -> str:
         """
         The filename which is fetched by the client from TFTP.
+
+        If the filename is set to ``<<inherit>>`` and there is no parent profile then it will be set to an empty string.
 
         :getter: Either the default/inherited one, or the one specific to this profile.
         :setter: The new filename which is fetched on boot. May raise a ``TypeError`` when the wrong type was given.
         """
         return self._resolve("filename")
 
-    @filename.setter
+    @filename.setter  # type: ignore[no-redef]
     def filename(self, filename: str):
         """
         The setter for the ``filename`` property.
@@ -463,14 +583,19 @@ class Profile(item.Item):
         :param filename: The new ``filename`` for the profile.
         :raises TypeError: In case the new value was not of type ``str``.
         """
-        if not isinstance(filename, str):
+        if not isinstance(filename, str):  # type: ignore
             raise TypeError("Field filename of object profile needs to be of type str!")
+        parent = self.parent
+        if filename == enums.VALUE_INHERITED and parent is None:
+            filename = ""
         if not filename:
-            self._filename = enums.VALUE_INHERITED
-        else:
-            self._filename = filename.strip()
+            if parent:
+                filename = enums.VALUE_INHERITED
+            else:
+                filename = ""
+        self._filename = filename
 
-    @property
+    @InheritableProperty
     def autoinstall(self) -> str:
         """
         Represents the automatic OS installation template file path, this must be a local file.
@@ -478,20 +603,7 @@ class Profile(item.Item):
         :getter: Either the inherited name or the one specific to this profile.
         :setter: The name of the new autoinstall template is validated. The path should come in the format of a ``str``.
         """
-        if self._autoinstall == enums.VALUE_INHERITED:
-            parent = self.parent
-            if parent is not None and isinstance(parent, Profile):
-                return self.parent.autoinstall
-            elif parent is not None and isinstance(parent, Distro):
-                return self.api.settings().autoinstall
-            else:
-                self.logger.info(
-                    'Profile "%s" did not have a valid parent of type Profile but autoinstall is set to '
-                    '"<<inherit>>".',
-                    self.name,
-                )
-                return ""
-        return self._autoinstall
+        return self._resolve("autoinstall")
 
     @autoinstall.setter
     def autoinstall(self, autoinstall: str):
@@ -505,7 +617,7 @@ class Profile(item.Item):
             autoinstall
         )
 
-    @property
+    @InheritableProperty
     def virt_auto_boot(self) -> bool:
         """
         Whether the VM should be booted when booting the host or not.
@@ -517,8 +629,8 @@ class Profile(item.Item):
         """
         return self._resolve("virt_auto_boot")
 
-    @virt_auto_boot.setter
-    def virt_auto_boot(self, num: bool):
+    @virt_auto_boot.setter  # type: ignore[no-redef]
+    def virt_auto_boot(self, num: Union[bool, str, int]):
         """
         Setter for booting a virtual machine automatically.
 
@@ -529,7 +641,7 @@ class Profile(item.Item):
             return
         self._virt_auto_boot = validate.validate_virt_auto_boot(num)
 
-    @property
+    @LazyProperty
     def virt_cpus(self) -> int:
         """
         The amount of vCPU cores used in case the image is being deployed on top of a VM host.
@@ -537,7 +649,7 @@ class Profile(item.Item):
         :getter: The cores used.
         :setter: The new number of cores.
         """
-        return self._virt_cpus
+        return self._resolve("virt_cpus")
 
     @virt_cpus.setter
     def virt_cpus(self, num: Union[int, str]):
@@ -548,7 +660,7 @@ class Profile(item.Item):
         """
         self._virt_cpus = validate.validate_virt_cpus(num)
 
-    @property
+    @InheritableProperty
     def virt_file_size(self) -> float:
         r"""
         The size of the image and thus the usable size for the guest.
@@ -563,7 +675,7 @@ class Profile(item.Item):
         """
         return self._resolve("virt_file_size")
 
-    @virt_file_size.setter
+    @virt_file_size.setter  # type: ignore[no-redef]
     def virt_file_size(self, num: Union[str, int, float]):
         """
         Setter for the size of the virtual image size.
@@ -572,7 +684,7 @@ class Profile(item.Item):
         """
         self._virt_file_size = validate.validate_virt_file_size(num)
 
-    @property
+    @InheritableProperty
     def virt_disk_driver(self) -> enums.VirtDiskDrivers:
         """
         The type of disk driver used for storing the image.
@@ -584,7 +696,7 @@ class Profile(item.Item):
         """
         return self._resolve_enum("virt_disk_driver", enums.VirtDiskDrivers)
 
-    @virt_disk_driver.setter
+    @virt_disk_driver.setter  # type: ignore[no-redef]
     def virt_disk_driver(self, driver: str):
         """
         Setter for the virtual disk driver that will be used.
@@ -593,7 +705,7 @@ class Profile(item.Item):
         """
         self._virt_disk_driver = enums.VirtDiskDrivers.to_enum(driver)
 
-    @property
+    @InheritableProperty
     def virt_ram(self) -> int:
         """
         The amount of RAM given to the guest in MB.
@@ -605,7 +717,7 @@ class Profile(item.Item):
         """
         return self._resolve("virt_ram")
 
-    @virt_ram.setter
+    @virt_ram.setter  # type: ignore[no-redef]
     def virt_ram(self, num: Union[str, int]):
         """
         Setter for the virtual RAM used for the VM.
@@ -614,7 +726,7 @@ class Profile(item.Item):
         """
         self._virt_ram = validate.validate_virt_ram(num)
 
-    @property
+    @InheritableProperty
     def virt_type(self) -> enums.VirtType:
         """
         The type of image used.
@@ -626,8 +738,8 @@ class Profile(item.Item):
         """
         return self._resolve_enum("virt_type", enums.VirtType)
 
-    @virt_type.setter
-    def virt_type(self, vtype: str):
+    @virt_type.setter  # type: ignore[no-redef]
+    def virt_type(self, vtype: Union[enums.VirtType, str]):
         """
         Setter for the virtual machine type.
 
@@ -635,7 +747,7 @@ class Profile(item.Item):
         """
         self._virt_type = enums.VirtType.to_enum(vtype)
 
-    @property
+    @InheritableProperty
     def virt_bridge(self) -> str:
         """
         Represents the name of the virtual bridge to use.
@@ -647,7 +759,7 @@ class Profile(item.Item):
         """
         return self._resolve("virt_bridge")
 
-    @virt_bridge.setter
+    @virt_bridge.setter  # type: ignore[no-redef]
     def virt_bridge(self, vbridge: str):
         """
         Setter for the name of the virtual bridge to use.
@@ -656,7 +768,7 @@ class Profile(item.Item):
         """
         self._virt_bridge = validate.validate_virt_bridge(vbridge)
 
-    @property
+    @LazyProperty
     def virt_path(self) -> str:
         """
         The path to the place where the image will be stored.
@@ -675,8 +787,8 @@ class Profile(item.Item):
         """
         self._virt_path = validate.validate_virt_path(path)
 
-    @property
-    def repos(self) -> list:
+    @LazyProperty
+    def repos(self) -> Union[str, List[str]]:
         """
         The repositories to add once the system is provisioned.
 
@@ -686,15 +798,17 @@ class Profile(item.Item):
         return self._repos
 
     @repos.setter
-    def repos(self, repos: list):
+    def repos(self, repos: Union[str, List[str]]):
         """
         Setter of the repositories for the profile.
 
         :param repos: The new repositories which will be set.
         """
+        old_repos = self._repos
         self._repos = validate.validate_repos(repos, self.api, bypass_check=False)
+        self.api.profiles().update_index_value(self, "repos", old_repos, self._repos)
 
-    @property
+    @InheritableProperty
     def redhat_management_key(self) -> str:
         """
         Getter of the redhat management key of the profile or it's parent.
@@ -706,21 +820,21 @@ class Profile(item.Item):
         """
         return self._resolve("redhat_management_key")
 
-    @redhat_management_key.setter
+    @redhat_management_key.setter  # type: ignore[no-redef]
     def redhat_management_key(self, management_key: str):
         """
         Setter of the redhat management key.
 
         :param management_key: The value may be reset by setting it to None.
         """
-        if not isinstance(management_key, str):
+        if not isinstance(management_key, str):  # type: ignore
             raise TypeError("Field management_key of object profile is of type str!")
         if not management_key:
             self._redhat_management_key = enums.VALUE_INHERITED
         self._redhat_management_key = management_key
 
-    @property
-    def boot_loaders(self) -> list:
+    @InheritableProperty
+    def boot_loaders(self) -> List[str]:
         """
         This represents all boot loaders for which Cobbler will try to generate bootloader configuration for.
 
@@ -731,8 +845,8 @@ class Profile(item.Item):
         """
         return self._resolve("boot_loaders")
 
-    @boot_loaders.setter
-    def boot_loaders(self, boot_loaders: list):
+    @boot_loaders.setter  # type: ignore[no-redef]
+    def boot_loaders(self, boot_loaders: Union[List[str], str]):
         """
         Setter of the boot loaders.
 
@@ -744,28 +858,29 @@ class Profile(item.Item):
             return
 
         if boot_loaders:
-            boot_loaders_split = utils.input_string_or_list(boot_loaders)
+            boot_loaders_split = input_converters.input_string_or_list(boot_loaders)
 
             parent = self.parent
+            if parent is None:
+                parent = self.distro
             if parent is not None:
-                parent_boot_loaders = parent.boot_loaders
+                parent_boot_loaders = parent.boot_loaders  # type: ignore
             else:
                 self.logger.warning(
                     'Parent of profile "%s" could not be found for resolving the parent bootloaders.',
                     self.name,
                 )
                 parent_boot_loaders = []
-            if not set(boot_loaders_split).issubset(parent_boot_loaders):
+            if not set(boot_loaders_split).issubset(parent_boot_loaders):  # type: ignore
                 raise CX(
-                    'Error with profile "%s" - not all boot_loaders are supported (given: "%s"; supported:'
-                    '"%s")'
-                    % (self.name, str(boot_loaders_split), str(parent_boot_loaders))
+                    f'Error with profile "{self.name}" - not all boot_loaders are supported (given:'
+                    f'"{str(boot_loaders_split)}"; supported: "{str(parent_boot_loaders)}")'  # type: ignore
                 )
             self._boot_loaders = boot_loaders_split
         else:
             self._boot_loaders = []
 
-    @property
+    @LazyProperty
     def menu(self) -> str:
         r"""
         Property to represent the menu which this image should be put into.
@@ -783,29 +898,31 @@ class Profile(item.Item):
         :param menu: The menu for the image.
         :raises CX: In case the menu to be set could not be found.
         """
-        if not isinstance(menu, str):
+        if not isinstance(menu, str):  # type: ignore
             raise TypeError("Field menu of object profile needs to be of type str!")
         if menu and menu != "":
             menu_list = self.api.menus()
             if not menu_list.find(name=menu):
-                raise CX("menu %s not found" % menu)
+                raise CX(f"menu {menu} not found")
+        old_menu = self._menu
         self._menu = menu
+        self.api.profiles().update_index_value(self, "menu", old_menu, menu)
 
-    @property
-    def children(self) -> list:
+    @LazyProperty
+    def display_name(self) -> str:
         """
-        This property represents all children of a distribution. It should not be set manually.
+        Returns the display name.
 
-        :getter: The children of the distro.
-        :setter: No validation is done because this is a Cobbler internal property.
+        :getter: Returns the display name for the boot menu.
+        :setter: Sets the display name for the boot menu.
         """
-        return self._children
+        return self._display_name
 
-    @children.setter
-    def children(self, value: list):
+    @display_name.setter
+    def display_name(self, display_name: str):
         """
-        Setter for the children property.
+        Setter for the display_name of the item.
 
-        :param value: The new children of the distro.
+        :param display_name: The new display_name. If ``None`` the display_name will be set to an emtpy string.
         """
-        self._children = value
+        self._display_name = display_name

@@ -1,30 +1,23 @@
 """
-Copyright 2008-2009, Red Hat, Inc and Others
-Michael DeHaan <michael.dehaan AT gmail>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
-02110-1301  USA
+Cobbler module that at runtime holds all systems in Cobbler.
 """
 
-from cobbler.cobbler_collections import collection
-from cobbler.items import system as system
+# SPDX-License-Identifier: GPL-2.0-or-later
+# SPDX-FileCopyrightText: Copyright 2008-2009, Red Hat, Inc and Others
+# SPDX-FileCopyrightText: Michael DeHaan <michael.dehaan AT gmail>
+
+from typing import TYPE_CHECKING, Any, Dict, Set
+
 from cobbler import utils
 from cobbler.cexceptions import CX
+from cobbler.cobbler_collections import collection
+from cobbler.items import network_interface, system
+
+if TYPE_CHECKING:
+    from cobbler.api import CobblerAPI
 
 
-class Systems(collection.Collection):
+class Systems(collection.Collection[system.System]):
     """
     Systems are hostnames/MACs/IP names and the associated profile
     they belong to.
@@ -38,17 +31,17 @@ class Systems(collection.Collection):
     def collection_types() -> str:
         return "systems"
 
-    def factory_produce(self, api, item_dict):
+    def factory_produce(
+        self, api: "CobblerAPI", seed_data: Dict[str, Any]
+    ) -> system.System:
         """
-        Return a Distro forged from item_dict
+        Return a System forged from seed_data
 
-        :param api: TODO
-        :param item_dict: TODO
-        :returns: TODO
+        :param api: Parameter is skipped.
+        :param seed_data: Data to seed the object with.
+        :returns: The created object.
         """
-        new_system = system.System(api)
-        new_system.from_dict(item_dict)
-        return new_system
+        return system.System(self.api, **seed_data)
 
     def remove(
         self,
@@ -57,17 +50,20 @@ class Systems(collection.Collection):
         with_sync: bool = True,
         with_triggers: bool = True,
         recursive: bool = False,
-    ):
+    ) -> None:
         """
         Remove element named 'name' from the collection
 
         :raises CX: In case the name of the object was not given.
         """
-        name = name.lower()
-        obj = self.find(name=name)
+        obj = self.listing.get(name, None)
 
         if obj is None:
-            raise CX("cannot delete an object that does not exist: %s" % name)
+            raise CX(f"cannot delete an object that does not exist: {name}")
+
+        if isinstance(obj, list):
+            # Will never happen, but we want to make mypy happy.
+            raise CX("Ambiguous match detected!")
 
         if with_delete:
             if with_triggers:
@@ -76,19 +72,11 @@ class Systems(collection.Collection):
                 )
             if with_sync:
                 lite_sync = self.api.get_sync()
-                lite_sync.remove_single_system(name)
+                lite_sync.remove_single_system(obj)
 
-        if obj.parent is not None and obj.name in obj.parent.children:
-            obj.parent.children.remove(obj.name)
-            # ToDo: Only serialize parent object, use:
-            #       Use self.collection_mgr.serialize_one_item(obj.parent)
-            self.api.serialize()
-
-        self.lock.acquire()
-        try:
+        with self.lock:
+            self.remove_from_indexes(obj)
             del self.listing[name]
-        finally:
-            self.lock.release()
         self.collection_mgr.serialize_delete(self, obj)
         if with_delete:
             if with_triggers:
@@ -98,3 +86,99 @@ class Systems(collection.Collection):
                 utils.run_triggers(
                     self.api, obj, "/var/lib/cobbler/triggers/change/*", []
                 )
+
+    def update_interface_index_value(
+        self,
+        interface: network_interface.NetworkInterface,
+        attribute_name: str,
+        old_value: str,
+        new_value: str,
+    ) -> None:
+        if (
+            interface.system_name in self.listing
+            and interface in self.listing[interface.system_name].interfaces.values()
+            and self.listing[interface.system_name].inmemory
+        ):
+            self.update_index_value(
+                self.listing[interface.system_name],
+                attribute_name,
+                old_value,
+                new_value,
+            )
+
+    def update_interfaces_indexes(
+        self,
+        ref: system.System,
+        new_ifaces: Dict[str, network_interface.NetworkInterface],
+    ) -> None:
+        """
+        Update interfaces indexes for the system.
+
+        :param ref: The reference to the system whose interfaces indexes are updated.
+        :param new_ifaces: The new interfaces.
+        """
+        if ref.name not in self.listing:
+            return
+
+        for indx in self.indexes:
+            if indx == "uid":
+                continue
+
+            old_ifaces = ref.interfaces
+            old_values: Set[str] = {
+                getattr(x, indx)
+                for x in old_ifaces.values()
+                if hasattr(x, indx) and getattr(x, indx) != ""
+            }
+            new_values: Set[str] = {
+                getattr(x, indx)
+                for x in new_ifaces.values()
+                if hasattr(x, indx) and getattr(x, indx) != ""
+            }
+
+            with self.lock:
+                for value in old_values - new_values:
+                    self.index_helper(
+                        ref,
+                        indx,
+                        value,
+                        self.remove_single_index_value,
+                    )
+                for value in new_values - old_values:
+                    self.index_helper(
+                        ref,
+                        indx,
+                        value,
+                        self.add_single_index_value,
+                    )
+
+    def update_interface_indexes(
+        self,
+        ref: system.System,
+        iface_name: str,
+        new_iface: network_interface.NetworkInterface,
+    ) -> None:
+        """
+        Update interface indexes for the system.
+
+        :param ref: The reference to the system whose interfaces indexes are updated.
+        :param iface_name: The new interface name.
+        :param new_iface: The new interface.
+        """
+        self.update_interfaces_indexes(
+            ref, {**ref.interfaces, **{iface_name: new_iface}}
+        )
+
+    def remove_interface_from_indexes(self, ref: system.System, name: str) -> None:
+        """
+        Remove index keys for the system interface.
+
+        :param ref: The reference to the system whose index keys are removed.
+        :param name: The reference to the system whose index keys are removed.
+        """
+        if not ref.inmemory or name not in ref.interfaces:
+            return
+
+        new_ifaces = ref.interfaces.copy()
+        del new_ifaces[name]
+        self.update_interfaces_indexes(ref, new_ifaces)

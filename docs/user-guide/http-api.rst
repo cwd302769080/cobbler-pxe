@@ -25,13 +25,13 @@ Returns the currently loaded settings. For specific settings please see :ref:`th
 
 Example Call:
 
-.. code-block::
+.. code-block:: console
 
     curl http://localhost/cblr/svc/op/setting
 
 Example Output:
 
-.. code-block::
+.. code-block:: text
 
     #{
         "allow_duplicate_hostnames": false,
@@ -55,32 +55,32 @@ Profile
 
 Example Call:
 
-.. code-block::
+.. code-block:: console
 
     curl http://localhost/cblr/svc/op/autoinstall/profile/example_profile
 
 Example Output:
 
-.. code-block::
+.. code-block:: yaml
 
-    # this file intentionally left blank
-    # admins:  edit it as you like, or leave it blank for non-interactive install
+   # this file intentionally left blank
+   # admins:  edit it as you like, or leave it blank for non-interactive install
 
 System
 ------
 
 Example Call:
 
-.. code-block::
+.. code-block:: console
 
-    curl http://localhost/cblr/svc/op/autoinstall/system/example_system
+   curl http://localhost/cblr/svc/op/autoinstall/system/example_system
 
 Example Output:
 
-.. code-block::
+.. code-block:: yaml
 
-    # this file intentionally left blank
-    # admins:  edit it as you like, or leave it blank for non-interactive install
+   # this file intentionally left blank
+   # admins:  edit it as you like, or leave it blank for non-interactive install
 
 ks
 ==
@@ -93,32 +93,32 @@ Profile
 
 Example Call:
 
-.. code-block::
+.. code-block:: console
 
-    curl http://localhost/cblr/svc/op/ks/profile/example_profile
+   curl http://localhost/cblr/svc/op/ks/profile/example_profile
 
 Example Output:
 
-.. code-block::
+.. code-block:: yaml
 
-    # this file intentionally left blank
-    # admins:  edit it as you like, or leave it blank for non-interactive install
+   # this file intentionally left blank
+   # admins:  edit it as you like, or leave it blank for non-interactive install
 
 System
 ------
 
 Example Call:
 
-.. code-block::
+.. code-block:: console
 
     curl http://localhost/cblr/svc/op/ks/system/example_system
 
 Example Output:
 
-.. code-block::
+.. code-block:: yaml
 
-    # this file intentionally left blank
-    # admins:  edit it as you like, or leave it blank for non-interactive install
+   # this file intentionally left blank
+   # admins:  edit it as you like, or leave it blank for non-interactive install
 
 iPXE
 ====
@@ -130,16 +130,16 @@ Profile
 
 Example Call:
 
-.. code-block::
+.. code-block:: console
 
     curl http://localhost/cblr/svc/op/ipxe/profile/example_profile
 
 Example Output:
 
-.. code-block::
+.. code-block:: text
 
     :example_profile
-    kernel /images/example_distro/vmlinuz   initrd=initrd.magic
+    kernel /images/example_distro/vmlinuz
     initrd /images/example_distro/initramfs
     boot
 
@@ -151,7 +151,7 @@ Image
 
 Example Call:
 
-.. code-block::
+.. code-block:: console
 
     curl http://localhost/cblr/svc/op/ipxe/image/example_image
 
@@ -164,13 +164,13 @@ System
 
 Example Call:
 
-.. code-block::
+.. code-block:: console
 
     curl http://localhost/cblr/svc/op/ipxe/system/example_system
 
 Example Output:
 
-.. code-block::
+.. code-block:: text
 
     #!ipxe
     iseq ${smbios/manufacturer} HP && exit ||
@@ -189,13 +189,13 @@ Profile
 
 Example Call:
 
-.. code-block::
+.. code-block:: console
 
     curl http://localhost/cblr/svc/op/bootcfg/profile/example_profile
 
 Example Output:
 
-.. code-block::
+.. code-block:: text
 
     bootstate=0
     title=Loading ESXi installer
@@ -211,13 +211,13 @@ System
 
 Example Call:
 
-.. code-block::
+.. code-block:: console
 
     curl http://localhost/cblr/svc/op/bootcfg/system/example_system
 
 Example Output:
 
-.. code-block::
+.. code-block:: text
 
     bootstate=0
     title=Loading ESXi installer
@@ -238,7 +238,7 @@ Profile
 
 Example Call:
 
-.. code-block::
+.. code-block:: console
 
     curl http://localhost/cblr/svc/op/script/profile/example_profile
 
@@ -251,7 +251,7 @@ System
 
 Example Call:
 
-.. code-block::
+.. code-block:: console
 
     curl http://localhost/cblr/svc/op/script/system/example_system
 
@@ -266,15 +266,15 @@ Returns events associated with the specified user, if no user is given returns a
 
 Example Call:
 
-.. code-block::
+.. code-block:: console
 
     curl http://localhost/cblr/svc/op/events/user/example_user
 
 Example Output:
 
-.. code-block::
+.. code-block:: yaml
 
-    []
+   []
 
 .. warning:: If the specified user doesn't exist there is currently no output.
 
@@ -288,7 +288,7 @@ Profile
 
 Example Call:
 
-.. code-block::
+.. code-block:: console
 
     curl http://localhost/cblr/svc/op/template/profile/example_profile
 
@@ -301,7 +301,7 @@ System
 
 Example Call:
 
-.. code-block::
+.. code-block:: console
 
     curl http://localhost/cblr/svc/op/template/system/example_system
 
@@ -319,7 +319,7 @@ Profile
 
 Example Call:
 
-.. code-block::
+.. code-block:: console
 
     curl http://localhost/cblr/svc/op/yum/profile/example_profile
 
@@ -332,7 +332,7 @@ System
 
 Example Call:
 
-.. code-block::
+.. code-block:: console
 
     curl http://localhost/cblr/svc/op/yum/system/example_system
 
@@ -347,45 +347,45 @@ Hook to install triggers.
 
 Example Call:
 
-.. code-block::
+.. code-block:: console
 
     curl http://localhost/cblr/svc/op/trig
 
 Example Output:
 
-.. code-block::
+.. code-block:: yaml
 
-    False
+   False
 
 Profile
 -------
 
 Example Call:
 
-.. code-block::
+.. code-block:: console
 
     curl http://localhost/cblr/svc/op/trig/profile/example_profile
 
 Example Output:
 
-.. code-block::
+.. code-block:: yaml
 
-    False
+   False
 
 System
 ------
 
 Example Call:
 
-.. code-block::
+.. code-block:: console
 
     curl http://localhost/cblr/svc/op/trig/system/example_system
 
 Example Output:
 
-.. code-block::
+.. code-block:: yaml
 
-    False
+   False
 
 noPXE
 =====
@@ -394,34 +394,34 @@ If network boot is enabled for specified system.
 
 Example Call:
 
-.. code-block::
+.. code-block:: console
 
     curl http://localhost/cblr/svc/op/nopxe/system/example_system
 
 Example Output:
 
-.. code-block::
+.. code-block:: yaml
 
-    True
+   True
 
 list
 ====
 
 Lists all instances of a specified type.
 Currently the valid options are:
-``systems, profiles, distros, images, repos, mgmtclasses, packages, files, menus``
+``systems, profiles, distros, images, repos, menus``
 If no option is selected the endpoint will default to ``systems``.
 If the selected option is not valid the endpoint will return ``?``.
 
 Example Call:
 
-.. code-block::
+.. code-block:: console
 
     curl http://localhost/cblr/svc/op/list/what/profiles
 
 Example Output:
 
-.. code-block::
+.. code-block:: text
 
     example_profile
     example_profile2
@@ -435,7 +435,7 @@ Autodetects the system, returns an error if more than one system is found.
 
 Example Call:
 
-.. code-block::
+.. code-block:: console
 
     curl http://localhost/cblr/svc/op/autodetect
 
@@ -453,7 +453,7 @@ Profile
 
 Example Call:
 
-.. code-block::
+.. code-block:: console
 
     curl http://localhost/cblr/svc/op/find_autoinstall/profile/example_profile
 
@@ -466,7 +466,7 @@ System
 
 Example Call:
 
-.. code-block::
+.. code-block:: console
 
     curl http://localhost/cblr/svc/op/find_autoinstall/system/example_system
 
@@ -485,7 +485,7 @@ Profile
 
 Example Call:
 
-.. code-block::
+.. code-block:: console
 
     curl http://localhost/cblr/svc/op/findks/profile/example_profile
 
@@ -498,7 +498,7 @@ System
 
 Example Call:
 
-.. code-block::
+.. code-block:: console
 
     curl http://localhost/cblr/svc/op/findks/system/example_system
 
@@ -513,7 +513,7 @@ Dump puppet data for specified hostname, returns yaml file for host.
 
 Example Call:
 
-.. code-block::
+.. code-block:: console
 
     curl http://localhost/cblr/svc/op/puppet/hostname/example_hostname
 

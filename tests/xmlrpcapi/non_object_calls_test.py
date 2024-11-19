@@ -1,20 +1,31 @@
+"""
+Tests that validate the functionality of the module that is responsible for providing XML-RPC calls related to
+non object calls.
+"""
+
 import os
+import re
+import time
+from typing import Any, Callable, Dict, Union
 
 import pytest
-import time
-import re
 
+from cobbler.remote import CobblerXMLRPCInterface
+
+from tests.conftest import does_not_raise
+
+WaitTaskEndType = Callable[[str, CobblerXMLRPCInterface], None]
 TEST_POWER_MANAGEMENT = True
 TEST_SYSTEM = ""
 
 
 @pytest.fixture(scope="function")
-def wait_task_end():
+def wait_task_end() -> WaitTaskEndType:
     """
     Wait until a task is finished
     """
 
-    def _wait_task_end(tid, remote):
+    def _wait_task_end(tid: str, remote: CobblerXMLRPCInterface) -> None:
         timeout = 0
         # "complete" is the constant: EVENT_COMPLETE from cobbler.remote
         while remote.get_task_status(tid)[2] != "complete":
@@ -29,7 +40,7 @@ def wait_task_end():
     return _wait_task_end
 
 
-def test_token(token):
+def test_token(token: str):
     """
     Test: authentication token validation
     """
@@ -37,7 +48,7 @@ def test_token(token):
     assert token not in ("", None)
 
 
-def test_get_user_from_token(remote, token):
+def test_get_user_from_token(remote: CobblerXMLRPCInterface, token: str):
     """
     Test: get user data from authentication token
     """
@@ -45,7 +56,7 @@ def test_get_user_from_token(remote, token):
     assert remote.get_user_from_token(token)
 
 
-def test_check(remote, token):
+def test_check(remote: CobblerXMLRPCInterface, token: str):
     """
     Test: check Cobbler status
     """
@@ -53,7 +64,7 @@ def test_check(remote, token):
     assert remote.check(token)
 
 
-def test_last_modified_time(remote, token):
+def test_last_modified_time(remote: CobblerXMLRPCInterface, token: str):
     """
     Test: get last modification time
     """
@@ -61,7 +72,9 @@ def test_last_modified_time(remote, token):
     assert remote.last_modified_time(token) != 0
 
 
-def test_power_system(remote, token, wait_task_end):
+def test_power_system(
+    remote: CobblerXMLRPCInterface, token: str, wait_task_end: WaitTaskEndType
+):
     """
     Test: reboot a system
     """
@@ -73,7 +86,9 @@ def test_power_system(remote, token, wait_task_end):
         wait_task_end(tid, remote)
 
 
-def test_sync(remote, token, wait_task_end):
+def test_sync(
+    remote: CobblerXMLRPCInterface, token: str, wait_task_end: WaitTaskEndType
+):
     """
     Test: synchronize Cobbler internal data with managed services
     (dhcp, tftp, dns)
@@ -88,8 +103,10 @@ def test_sync(remote, token, wait_task_end):
 
     event_log = remote.get_event_log(tid)
 
+    assert isinstance(event_log, str)
 
-def test_get_autoinstall_templates(remote, token):
+
+def test_get_autoinstall_templates(remote: CobblerXMLRPCInterface, token: str):
     """
     Test: get autoinstall templates
     """
@@ -98,7 +115,7 @@ def test_get_autoinstall_templates(remote, token):
     assert len(result) > 0
 
 
-def test_get_autoinstall_snippets(remote, token):
+def test_get_autoinstall_snippets(remote: CobblerXMLRPCInterface, token: str):
     """
     Test: get autoinstall snippets
     """
@@ -107,7 +124,7 @@ def test_get_autoinstall_snippets(remote, token):
     assert len(result) > 0
 
 
-def test_generate_autoinstall(remote):
+def test_generate_autoinstall(remote: CobblerXMLRPCInterface):
     """
     Test: generate autoinstall content
     """
@@ -116,7 +133,7 @@ def test_generate_autoinstall(remote):
         remote.generate_autoinstall(None, TEST_SYSTEM)
 
 
-def test_generate_ipxe(remote):
+def test_generate_ipxe(remote: CobblerXMLRPCInterface):
     """
     Test: generate iPXE file content
     """
@@ -125,7 +142,7 @@ def test_generate_ipxe(remote):
         remote.generate_ipxe(None, TEST_SYSTEM)
 
 
-def test_generate_bootcfg(remote):
+def test_generate_bootcfg(remote: CobblerXMLRPCInterface):
     """
     Test: generate boot loader configuration file content
     """
@@ -134,7 +151,7 @@ def test_generate_bootcfg(remote):
         remote.generate_bootcfg(None, TEST_SYSTEM)
 
 
-def test_get_settings(remote, token):
+def test_get_settings(remote: CobblerXMLRPCInterface, token: str):
     """
     Test: get settings
     """
@@ -142,7 +159,7 @@ def test_get_settings(remote, token):
     remote.get_settings(token)
 
 
-def test_get_signatures(remote, token):
+def test_get_signatures(remote: CobblerXMLRPCInterface, token: str):
     """
     Test: get distro signatures
     """
@@ -150,7 +167,7 @@ def test_get_signatures(remote, token):
     remote.get_signatures(token)
 
 
-def test_get_valid_breeds(remote, token):
+def test_get_valid_breeds(remote: CobblerXMLRPCInterface, token: str):
     """
     Test: get valid OS breeds
     """
@@ -159,7 +176,7 @@ def test_get_valid_breeds(remote, token):
     assert len(breeds) > 0
 
 
-def test_get_valid_os_versions_for_breed(remote, token):
+def test_get_valid_os_versions_for_breed(remote: CobblerXMLRPCInterface, token: str):
     """
     Test: get valid OS versions for a OS breed
     """
@@ -168,7 +185,7 @@ def test_get_valid_os_versions_for_breed(remote, token):
     assert len(versions) > 0
 
 
-def test_get_valid_os_versions(remote, token):
+def test_get_valid_os_versions(remote: CobblerXMLRPCInterface, token: str):
     """
     Test: get valid OS versions
     """
@@ -177,12 +194,12 @@ def test_get_valid_os_versions(remote, token):
     assert len(versions) > 0
 
 
-def test_get_random_mac(remote, token):
+def test_get_random_mac(remote: CobblerXMLRPCInterface, token: str):
     """
     Test: get a random mac for a virtual network interface
     """
 
-    mac = remote.get_random_mac("xen", token)
+    mac = remote.get_random_mac("kvm", token)
     hexa = "[0-9A-Fa-f]{2}"
     match_obj = re.match(
         "%s:%s:%s:%s:%s:%s" % (hexa, hexa, hexa, hexa, hexa, hexa), mac
@@ -190,8 +207,60 @@ def test_get_random_mac(remote, token):
     assert match_obj
 
 
+@pytest.mark.parametrize(
+    "input_attribute,checked_object,expected_result,expected_exception",
+    [
+        ("kernel_options", "system", {"a": "1", "b": "2", "d": "~"}, does_not_raise()),
+        ("arch", "distro", "x86_64", does_not_raise()),
+        ("distro", "profile", "testdistro_item_resolved_value", does_not_raise()),
+        ("profile", "system", "testprofile_item_resolved_value", does_not_raise()),
+        (
+            "interfaces",
+            "system",
+            {
+                "eth0": {
+                    "bonding_opts": "",
+                    "bridge_opts": "",
+                    "cnames": [],
+                    "connected_mode": False,
+                    "dhcp_tag": "",
+                    "dns_name": "",
+                    "if_gateway": "",
+                    "interface_master": "",
+                    "interface_type": "na",
+                    "ip_address": "",
+                    "ipv6_address": "",
+                    "ipv6_default_gateway": "",
+                    "ipv6_mtu": "",
+                    "ipv6_prefix": "",
+                    "ipv6_secondaries": [],
+                    "ipv6_static_routes": [],
+                    "mac_address": "aa:bb:cc:dd:ee:ff",
+                    "management": False,
+                    "mtu": "",
+                    "netmask": "",
+                    "static": False,
+                    "static_routes": [],
+                    "virt_bridge": "virbr0",
+                }
+            },
+            does_not_raise(),
+        ),
+        ("modify_interface", "system", {}, pytest.raises(ValueError)),
+        ("doesnt_exist", "system", {}, pytest.raises(AttributeError)),
+    ],
+)
 def test_get_item_resolved_value(
-    remote, token, create_distro, create_profile, create_system, create_kernel_initrd
+    remote: CobblerXMLRPCInterface,
+    token: str,
+    create_distro: Callable[[str, str, str, str, str], str],
+    create_profile: Callable[[str, str, str], str],
+    create_system: Callable[[str, str], str],
+    create_kernel_initrd: Callable[[str, str], str],
+    input_attribute: str,
+    checked_object: str,
+    expected_result: Union[str, Dict[str, Any]],
+    expected_exception: Any,
 ):
     # Arrange
     fk_kernel = "vmlinuz1"
@@ -207,11 +276,27 @@ def test_get_item_resolved_value(
     create_profile(name_profile, name_distro, "a=1 b=2 c=3 c=4 c=5 d e")
     test_system_handle = create_system(name_system, name_profile)
     remote.modify_system(test_system_handle, "kernel_options", "!c !e", token=token)
-    test_system = remote.get_system(name_system, token=token)
-    expected_result = {"a": "1", "b": "2", "d": None}
+    remote.modify_system(
+        test_system_handle,
+        "modify_interface",
+        {"macaddress-eth0": "aa:bb:cc:dd:ee:ff"},
+        token=token,
+    )
+    if checked_object == "distro":
+        test_item = remote.get_distro(name_distro, token=token)
+    elif checked_object == "profile":
+        test_item = remote.get_profile(name_profile, token=token)
+    elif checked_object == "system":
+        test_item = remote.get_system(name_system, token=token)
+    else:
+        raise ValueError("checked_object has wrong value")
 
     # Act
-    result = remote.get_item_resolved_value(test_system.get("uid"), "kernel_options")
+    with expected_exception:
+        result = remote.get_item_resolved_value(test_item.get("uid"), input_attribute)  # type: ignore
 
-    # Assert
-    assert expected_result == result
+        if input_attribute == "interfaces" and "default" in result:  # type: ignore
+            result.pop("default")  # type: ignore
+
+        # Assert
+        assert expected_result == result

@@ -1,31 +1,25 @@
 """
-Copyright 2006-2009, Red Hat, Inc and Others
-Michael DeHaan <michael.dehaan AT gmail>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
-02110-1301  USA
+Cobbler module that at runtime holds all repos in Cobbler.
 """
-import os.path
 
-from cobbler.cobbler_collections import collection
-from cobbler.items import repo
+# SPDX-License-Identifier: GPL-2.0-or-later
+# SPDX-FileCopyrightText: Copyright 2006-2009, Red Hat, Inc and Others
+# SPDX-FileCopyrightText: Michael DeHaan <michael.dehaan AT gmail>
+
+import os.path
+from typing import TYPE_CHECKING, Any, Dict
+
 from cobbler import utils
 from cobbler.cexceptions import CX
+from cobbler.cobbler_collections import collection
+from cobbler.items import repo
+from cobbler.utils import filesystem_helpers
+
+if TYPE_CHECKING:
+    from cobbler.api import CobblerAPI
 
 
-class Repos(collection.Collection):
+class Repos(collection.Collection[repo.Repo]):
     """
     Repositories in Cobbler are way to create a local mirror of a yum repository.
     When used in conjunction with a mirrored distro tree (see "cobbler import"),
@@ -40,17 +34,19 @@ class Repos(collection.Collection):
     def collection_types() -> str:
         return "repos"
 
-    def factory_produce(self, api, item_dict):
+    def factory_produce(self, api: "CobblerAPI", seed_data: Dict[str, Any]):
         """
-        Return a Distro forged from item_dict
+        Return a Distro forged from seed_data
+
+        :param api: Parameter is skipped.
+        :param seed_data: The data the object is initalized with.
+        :returns: The created repository.
         """
-        new_repo = repo.Repo(api)
-        new_repo.from_dict(item_dict)
-        return new_repo
+        return repo.Repo(self.api, **seed_data)
 
     def remove(
         self,
-        name,
+        name: str,
         with_delete: bool = True,
         with_sync: bool = True,
         with_triggers: bool = True,
@@ -63,10 +59,14 @@ class Repos(collection.Collection):
         """
         # NOTE: with_delete isn't currently meaningful for repos
         # but is left in for consistancy in the API.  Unused.
-        name = name.lower()
         obj = self.find(name=name)
+
         if obj is None:
-            raise CX("cannot delete an object that does not exist: %s" % name)
+            raise CX(f"cannot delete an object that does not exist: {name}")
+
+        if isinstance(obj, list):
+            # Will never happen, but we want to make mypy happy.
+            raise CX("Ambiguous match detected!")
 
         if with_delete:
             if with_triggers:
@@ -74,11 +74,9 @@ class Repos(collection.Collection):
                     self.api, obj, "/var/lib/cobbler/triggers/delete/repo/pre/*", []
                 )
 
-        self.lock.acquire()
-        try:
+        with self.lock:
+            self.remove_from_indexes(obj)
             del self.listing[name]
-        finally:
-            self.lock.release()
         self.collection_mgr.serialize_delete(self, obj)
 
         if with_delete:
@@ -92,4 +90,4 @@ class Repos(collection.Collection):
 
             path = os.path.join(self.api.settings().webdir, "repo_mirror", obj.name)
             if os.path.exists(path):
-                utils.rmtree(path)
+                filesystem_helpers.rmtree(path)

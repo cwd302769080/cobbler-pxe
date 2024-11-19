@@ -33,6 +33,8 @@ clean: ## Cleans Python bytecode, build artifacts and the temp files.
 	@rm -f cobbler/modules/*.pyc
 	@rm -f cobbler/web/*.pyc
 	@rm -f cobbler/web/templatetags/*.pyc
+	@rm -rf cobbler/__pycache__
+	@rm -rf cobbler/**/__pycache__
 	@echo "cleaning: build artifacts"
 	@rm -rf build release dist cobbler.egg-info
 	@rm -rf rpm-build/*
@@ -40,11 +42,14 @@ clean: ## Cleans Python bytecode, build artifacts and the temp files.
 	@rm -f MANIFEST AUTHORS
 	@rm -f config/version
 	@rm -f docs/*.1.gz
+	@rm -rf docs/_build
 	@echo "cleaning: temp files"
 	@rm -f *~
 	@rm -rf buildiso
 	@rm -f *.tmp
 	@rm -f *.log
+	@rm -f supervisord.pid
+	@rm -rf .pytest_cache
 
 cleandoc: ## Cleans the docs directory.
 	@echo "cleaning: documentation"
@@ -53,6 +58,9 @@ cleandoc: ## Cleans the docs directory.
 doc: ## Creates the documentation with sphinx in html form.
 	@echo "creating: documentation"
 	@cd docs; make html > /dev/null 2>&1
+
+man: ## Creates documentation and man pages using Sphinx
+	@${PYTHON} -m sphinx -b man -j auto ./docs ./build/sphinx/man
 
 qa: ## If black is found then it is run.
 ifeq ($(strip $(BLACK)),)
@@ -79,17 +87,23 @@ release: clean qa authors sdist ## Creates the full release.
 	@cp distro_build_configs.sh release/
 	@cp cobbler.spec release/
 
-test-centos8: ## Executes the testscript for testing cobbler in a docker container on CentOS8.
-	./docker/rpms/build-and-install-rpms.sh el8 docker/rpms/CentOS_8/CentOS8.dockerfile
+test-rocky8: ## Executes the testscript for testing cobbler in a docker container on Rocky Linux 8.
+	./docker/rpms/build-and-install-rpms.sh rl8 docker/rpms/Rocky_Linux_8/Rocky_Linux_8.dockerfile
 
-test-fedora34: ## Executes the testscript for testing cobbler in a docker container on Fedora 33.
-	./docker/rpms/build-and-install-rpms.sh fc34 docker/rpms/Fedora_34/Fedora34.dockerfile
+test-rocky9: ## Executes the testscript for testing cobbler in a docker container on Rocky Linux 9.
+	./docker/rpms/build-and-install-rpms.sh rl8 docker/rpms/Rocky_Linux_9/Rocky_Linux_9.dockerfile
+
+test-fedora37: ## Executes the testscript for testing cobbler in a docker container on Fedora 37.
+	./docker/rpms/build-and-install-rpms.sh fc37 docker/rpms/Fedora_37/Fedora37.dockerfile
 
 test-debian10: ## Executes the testscript for testing cobbler in a docker container on Debian 10.
 	./docker/debs/build-and-install-debs.sh deb10 docker/debs/Debian_10/Debian10.dockerfile
 
 test-debian11: ## Executes the testscript for testing cobbler in a docker container on Debian 11.
 	./docker/debs/build-and-install-debs.sh deb11 docker/debs/Debian_11/Debian11.dockerfile
+
+test-debian12: ## Executes the testscript for testing cobbler in a docker container on Debian 12.
+	./docker/debs/build-and-install-debs.sh deb12 docker/debs/Debian_12/Debian12.dockerfile
 
 system-test: ## Runs the system tests
 	$(MAKE) -C system-tests
@@ -99,11 +113,12 @@ system-test-env: ## Configures the environment for system tests
 
 build: ## Runs the Python Build.
 	@source distro_build_configs.sh; \
-	${PYTHON} setup.py build -f
+	${PYTHON} setup.py build -f --executable=${PYTHON}
 
 install: build ## Runs the build target and then installs via setup.py
 	# Debian/Ubuntu requires an additional parameter in setup.py
 	@source distro_build_configs.sh; \
+	git config --add safe.directory /code; \
 	${PYTHON} setup.py install --root $(DESTDIR) -f
 
 devinstall: ## This deletes the /usr/share/cobbler directory and then runs the targets savestate, install and restorestate.
@@ -147,15 +162,12 @@ rpms: release ## Runs the target release and then creates via rpmbuild the rpms 
 	-ba cobbler.spec
 
 # Only build a binary package
-debs: release ## Runs the target release and then creates via debbuild the debs in a directory called deb-build.
-	mkdir -p deb-build
-	mkdir -p deb-build/{BUILD,BUILDROOT,DEBS,SDEBS,SOURCES}
-	cp dist/*.gz deb-build/
-	debbuild --define "_topdir %(pwd)/deb-build" \
-	--define "_builddir %{_topdir}" \
-	--define "_specdir %{_topdir}" \
-	--define "_sourcedir  %{_topdir}" \
-	-vv -bb cobbler.spec
+debs: authors ## Creates native debs in a directory called deb-build. The release target is called during the build process.
+	@source distro_build_configs.sh; \
+    debuild -us -uc
+	@mkdir -p deb-build; \
+    cp ../cobbler_* deb-build/; \
+    cp ../cobbler-tests* deb-build/
 
 eraseconfig: ## Deletes the cobbler data jsons which are created when using the file provider.
 	-rm /var/lib/cobbler/cobbler_collections/distros/*

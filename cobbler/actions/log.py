@@ -1,29 +1,21 @@
 """
-
-Copyright 2009, Red Hat, Inc and Others
-Bill Peck <bpeck@redhat.com>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
-02110-1301  USA
+Cobbler Trigger Module that managed the logs associated with a Cobbler system.
 """
 
+# SPDX-License-Identifier: GPL-2.0-or-later
+# SPDX-FileCopyrightText: Copyright 2009, Red Hat, Inc and Others
+# SPDX-FileCopyrightText: Bill Peck <bpeck@redhat.com>
+
 import glob
+import logging
 import os
 import os.path
-import logging
 import pathlib
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from cobbler.api import CobblerAPI
+    from cobbler.items.system import System
 
 
 class LogTool:
@@ -31,7 +23,7 @@ class LogTool:
     Helpers for dealing with System logs, anamon, etc..
     """
 
-    def __init__(self, system, api):
+    def __init__(self, system: "System", api: "CobblerAPI"):
         """
         Log library constructor requires a Cobbler system object.
         """
@@ -40,7 +32,7 @@ class LogTool:
         self.settings = api.settings()
         self.logger = logging.getLogger()
 
-    def clear(self):
+    def clear(self) -> None:
         """
         Clears the system logs
         """
@@ -57,9 +49,7 @@ class LogTool:
 
         for log in logs:
             try:
-                with open(log, "w") as f:
-                    f.truncate()
-            except IOError as e:
-                self.logger.info("Failed to Truncate '%s':%s " % (log, e))
-            except OSError as e:
-                self.logger.info("Failed to Truncate '%s':%s " % (log, e))
+                with open(log, "w", encoding="UTF-8") as log_fd:
+                    log_fd.truncate()
+            except IOError as error:
+                self.logger.info("Failed to Truncate '%s':%s ", log, error)

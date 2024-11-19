@@ -9,16 +9,19 @@ Tests for the Cobbler settings normalizations
 import yaml
 
 from cobbler.settings.migrations import (
-    V3_3_0,
-    V3_2_1,
-    V3_2_0,
-    V3_1_2,
-    V3_1_1,
-    V3_1_0,
-    V3_0_1,
     V3_0_0,
+    V3_0_1,
+    V3_1_0,
+    V3_1_1,
+    V3_1_2,
+    V3_2_0,
+    V3_2_1,
+    V3_3_0,
     V3_3_1,
     V3_3_2,
+    V3_3_3,
+    V3_3_4,
+    V3_3_5,
     V3_4_0,
 )
 
@@ -80,7 +83,7 @@ def test_normalize_v3_1_2():
     new_settings = V3_1_2.normalize(old_settings_dict)
 
     # Assert
-    assert len(V3_1_2.normalize(new_settings)) == 110
+    assert len(V3_1_2.normalize(new_settings)) == 111
 
 
 def test_normalize_v3_2_0():
@@ -92,7 +95,7 @@ def test_normalize_v3_2_0():
     new_settings = V3_2_0.normalize(old_settings_dict)
 
     # Assert
-    assert len(V3_2_0.normalize(new_settings)) == 112
+    assert len(V3_2_0.normalize(new_settings)) == 113
 
 
 def test_normalize_v3_2_1():
@@ -104,7 +107,7 @@ def test_normalize_v3_2_1():
     new_settings = V3_2_1.normalize(old_settings_dict)
 
     # Assert
-    assert len(V3_2_1.normalize(new_settings)) == 111
+    assert len(V3_2_1.normalize(new_settings)) == 112
 
 
 def test_normalize_v3_3_0():
@@ -116,7 +119,7 @@ def test_normalize_v3_3_0():
     new_settings = V3_3_0.normalize(old_settings_dict)
 
     # Assert
-    assert len(V3_3_0.normalize(new_settings)) == 121
+    assert len(V3_3_0.normalize(new_settings)) == 122
 
 
 def test_normalize_v3_3_1():
@@ -128,7 +131,7 @@ def test_normalize_v3_3_1():
     new_settings = V3_3_1.normalize(old_settings_dict)
 
     # Assert
-    assert len(V3_3_1.normalize(new_settings)) == 129
+    assert len(V3_3_1.normalize(new_settings)) == 130
 
 
 def test_normalize_v3_3_2():
@@ -140,7 +143,45 @@ def test_normalize_v3_3_2():
     new_settings = V3_3_2.normalize(old_settings_dict)
 
     # Assert
-    assert len(V3_3_2.normalize(new_settings)) == 129
+    assert len(V3_3_2.normalize(new_settings)) == 130
+
+
+def test_normalize_v3_3_3():
+    # Arrange
+    with open("/code/tests/test_data/V3_3_3/settings.yaml") as old_settings:
+        old_settings_dict = yaml.safe_load(old_settings.read())
+
+    # Act
+    new_settings = V3_3_3.normalize(old_settings_dict)
+
+    # Assert
+    assert len(new_settings) == 131
+    # Migration of default_virt_file_size to float is working
+    assert isinstance(new_settings.get("default_virt_file_size", None), float)
+
+
+def test_normalize_v3_3_4():
+    # Arrange
+    with open("/code/tests/test_data/V3_3_4/settings.yaml") as old_settings:
+        old_settings_dict = yaml.safe_load(old_settings.read())
+
+    # Act
+    new_settings = V3_3_4.normalize(old_settings_dict)
+
+    # Assert
+    assert len(new_settings) == 131
+
+
+def test_normalize_v3_3_5():
+    # Arrange
+    with open("/code/tests/test_data/V3_3_4/settings.yaml") as old_settings:
+        old_settings_dict = yaml.safe_load(old_settings.read())
+
+    # Act
+    new_settings = V3_3_5.normalize(old_settings_dict)
+
+    # Assert
+    assert len(new_settings) == 132
 
 
 def test_normalize_v3_4_0_empty():
@@ -173,4 +214,9 @@ def test_normalize_v3_4_0_full():
     new_settings = V3_4_0.normalize(old_settings_dict)
 
     # Assert
-    assert len(V3_4_0.normalize(new_settings)) == 130
+    assert "mongodb" in new_settings
+    assert new_settings["mongodb"] == {"host": "localhost", "port": 27017}
+    assert "cache_enabled" in new_settings
+    assert new_settings["cache_enabled"] == False
+    assert new_settings["lazy_start"] == False
+    assert len(V3_4_0.normalize(new_settings)) == 135

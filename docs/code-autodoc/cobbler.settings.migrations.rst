@@ -76,6 +76,54 @@ cobbler.settings.migrations.V3\_3\_0 module
    :undoc-members:
    :show-inheritance:
 
+cobbler.settings.migrations.V3\_3\_1 module
+-------------------------------------------
+
+.. automodule:: cobbler.settings.migrations.V3_3_1
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+cobbler.settings.migrations.V3\_3\_2 module
+-------------------------------------------
+
+.. automodule:: cobbler.settings.migrations.V3_3_2
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+cobbler.settings.migrations.V3\_3\_3 module
+-------------------------------------------
+
+.. automodule:: cobbler.settings.migrations.V3_3_3
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+cobbler.settings.migrations.V3\_3\_4 module
+-------------------------------------------
+
+.. automodule:: cobbler.settings.migrations.V3_3_4
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+cobbler.settings.migrations.V3\_3\_5 module
+-------------------------------------------
+
+.. automodule:: cobbler.settings.migrations.V3_3_5
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+cobbler.settings.migrations.V3\_4\_0 module
+-------------------------------------------
+
+.. automodule:: cobbler.settings.migrations.V3_4_0
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 cobbler.settings.migrations.helper module
 -----------------------------------------
 

@@ -1,77 +1,37 @@
 """
 Cobbler's Mongo database based object serializer.
-Experimental version.
-
-Copyright 2006-2009, Red Hat, Inc and Others
-Michael DeHaan <michael.dehaan AT gmail>
-James Cammarata <jimi@sngx.net>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
-02110-1301  USA
 """
-import configparser
-import pathlib
-from configparser import ConfigParser
 
-from cobbler import settings
+# SPDX-License-Identifier: GPL-2.0-or-later
+# SPDX-FileCopyrightText: Copyright 2006-2009, Red Hat, Inc and Others
+# SPDX-FileCopyrightText: Michael DeHaan <michael.dehaan AT gmail>
+# SPDX-FileCopyrightText: James Cammarata <jimi@sngx.net>
+
+import logging
+from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional
+
 from cobbler.cexceptions import CX
+from cobbler.modules.serializers import StorageBase
+
+if TYPE_CHECKING:
+    from pymongo.database import Database
+
+    from cobbler.api import CobblerAPI
+    from cobbler.cobbler_collections.collection import ITEM, Collection
 
 try:
-    from pymongo import MongoClient
-    from pymongo.errors import ConnectionFailure, ConfigurationError
+    # pylint: disable-next=ungrouped-imports
+    from pymongo.errors import ConfigurationError, ConnectionFailure, OperationFailure
+    from pymongo.mongo_client import MongoClient
 
-    pymongo_loaded = True
+    PYMONGO_LOADED = True
 except ModuleNotFoundError:
-    # FIXME: log message
-    pymongo_loaded = False
-
-mongodb = None
-
-
-def __connect(configfile: str = "/etc/cobbler/mongodb.conf"):
-    """
-    Reads the config file for mongodb and then connects to the mongodb.
-    """
-    if not pathlib.Path(configfile).is_file():
-        raise FileNotFoundError(
-            "Specified Cobbler MongoDB config file could not be found!"
-        )
-
-    cp = ConfigParser()
-    try:
-        cp.read(configfile)
-    except configparser.Error as cp_error:
-        raise configparser.Error(
-            "Could not read Cobbler MongoDB config file!"
-        ) from cp_error
-
-    host = cp.get("connection", "host", fallback="localhost")
-    port = cp.getint("connection", "port", fallback=27017)
-    # pylint: disable=global-statement
-    global mongodb
-    mongodb = MongoClient(host, port)["cobbler"]
-    try:
-        # The ismaster command is cheap and doesn't require auth.
-        mongodb.admin.command("ismaster")
-    except ConnectionFailure as e:
-        # FIXME: log error
-        raise CX('Unable to connect to Mongo database or get database "cobbler"') from e
-    except ConfigurationError as e:
-        raise CX(
-            "The configuration of the MongoDB connection isn't correct, please check the Cobbler settings."
-        ) from e
+    # pylint: disable=invalid-name
+    ConfigurationError = None
+    ConnectionFailure = None
+    OperationFailure = None
+    # This is a constant! pyright just doesn't understand it.
+    PYMONGO_LOADED = False  # type: ignore
 
 
 def register() -> str:
@@ -79,7 +39,7 @@ def register() -> str:
     The mandatory Cobbler module registration hook.
     """
     # FIXME: only run this if enabled.
-    if not pymongo_loaded:
+    if not PYMONGO_LOADED:
         return ""
     return "serializer"
 
@@ -91,77 +51,152 @@ def what() -> str:
     return "serializer/mongodb"
 
 
-def serialize_item(collection, item):
+class MongoDBSerializer(StorageBase):
     """
-    Save a collection item to database.
-
-    :param collection: collection
-    :param item: collection item
+    TODO
     """
 
-    __connect()
-    collection = mongodb[collection.collection_type()]
-    data = collection.find_one({"name": item.name})
-    if data:
-        collection.update({"name": item.name}, item.serialize())
-    else:
-        collection.insert(item.serialize())
+    def __init__(self, api: "CobblerAPI"):
+        super().__init__(api)
+        self.logger = logging.getLogger()
+        self.mongodb: Optional["MongoClient[Mapping[str, Any]]"] = None
+        self.mongodb_database: Optional["Database[Mapping[str, Any]]"] = None
+        self.database_name = "cobbler"
+        self.__connect()
+
+    def __connect(self) -> None:
+        """
+        Reads the config file for mongodb and then connects to the mongodb.
+        """
+        if ConnectionFailure is None or ConfigurationError is None:
+            raise ImportError("MongoDB is not correctly imported!")
+        host = self.api.settings().mongodb.get("host", "localhost")
+        port = self.api.settings().mongodb.get("port", 27017)
+        # TODO: Make database name configurable in settings
+        # TODO: Make authentication configurable
+        self.mongodb = MongoClient(host, port)  # type: ignore
+        try:
+            # The ismaster command is cheap and doesn't require auth.
+            self.mongodb.admin.command("ping")  # type: ignore
+        except ConnectionFailure as error:
+            raise CX("Unable to connect to Mongo database.") from error
+        except ConfigurationError as error:
+            raise CX(
+                "The configuration of the MongoDB connection isn't correct, please check the Cobbler settings."
+            ) from error
+        if self.database_name not in self.mongodb.list_database_names():  # type: ignore
+            self.logger.info(
+                'Database with name "%s" was not found and will be created.',
+                self.database_name,
+            )
+        self.mongodb_database = self.mongodb["cobbler"]  # type: ignore
+
+    def _rename_collection(self, old_collection: str, new_collection: str) -> None:
+        """
+        Rename a collection in database.
+
+        :param old_collection: Previous collection name.
+        :param old_collection: New collection name.
+        """
+        if OperationFailure is None:
+            raise ImportError("MongoDB not correctly imported!")
+        if (
+            old_collection != "setting"
+            and old_collection in self.mongodb_database.list_collection_names()  # type: ignore
+        ):
+            try:
+                self.mongodb_database[old_collection].rename(new_collection)  # type: ignore
+            except OperationFailure as error:
+                raise CX(
+                    f'Cannot rename MongoDB collection from "{old_collection}" to "{new_collection}": {error}.'
+                ) from error
+
+    def serialize_item(self, collection: "Collection[ITEM]", item: "ITEM") -> None:
+        if self.mongodb_database is None:
+            raise ValueError("Database not available!")
+        mongodb_collection = self.mongodb_database[collection.collection_types()]
+        data = mongodb_collection.find_one({"name": item.name})
+        if data:
+            mongodb_collection.replace_one({"name": item.name}, item.serialize())  # type: ignore
+        else:
+            mongodb_collection.insert_one(item.serialize())  # type: ignore
+
+    def serialize_delete(self, collection: "Collection[ITEM]", item: "ITEM") -> None:
+        if self.mongodb_database is None:
+            raise ValueError("Database not available!")
+        mongodb_collection = self.mongodb_database[collection.collection_types()]
+        mongodb_collection.delete_one({"name": item.name})  # type: ignore
+
+    def serialize(self, collection: "Collection[ITEM]") -> None:
+        # TODO: error detection
+        ctype = collection.collection_types()
+        if ctype != "settings":
+            for item in collection:
+                self.serialize_item(collection, item)
+
+    def deserialize_raw(self, collection_type: str) -> List[Dict[str, Any]]:
+        if self.mongodb_database is None:
+            raise ValueError("Database not available!")
+
+        results = []
+        projection = None
+        collection = self.mongodb_database[collection_type]
+        lazy_start = self.api.settings().lazy_start
+        if lazy_start:
+            projection = ["name"]
+
+        # pymongo.cursor.Cursor
+        cursor = collection.find(projection=projection)
+        for result in cursor:
+            self._remove_id(result)
+            result["inmemory"] = not lazy_start  # type: ignore
+            results.append(result)  # type: ignore
+        return results  # type: ignore
+
+    def deserialize(
+        self, collection: "Collection[ITEM]", topological: bool = True
+    ) -> None:
+        self._rename_collection(
+            collection.collection_type(), collection.collection_types()
+        )
+        datastruct = self.deserialize_raw(collection.collection_types())
+        if topological and isinstance(datastruct, list):  # type: ignore
+            datastruct.sort(key=lambda x: x.get("depth", 1))  # type: ignore
+        if isinstance(datastruct, dict):
+            # This is currently the corner case for the settings type.
+            collection.from_dict(datastruct)  # type: ignore
+        elif isinstance(datastruct, list):  # type: ignore
+            collection.from_list(datastruct)  # type: ignore
+
+    def deserialize_item(self, collection_type: str, name: str) -> Dict[str, Any]:
+        """
+        Get a collection item from database.
+
+        :param collection_type: The collection type to fetch.
+        :param name: collection Item name
+        :return: Dictionary of the collection item.
+        """
+        if self.mongodb_database is None:
+            raise ValueError("Database not available!")
+
+        mongodb_collection = self.mongodb_database[collection_type]
+        result = mongodb_collection.find_one({"name": name})
+        if result is None:
+            raise CX(
+                f"Item {name} of collection {collection_type} was not found in MongoDB database {self.database_name}!"
+            )
+        self._remove_id(result)
+        result["inmemory"] = True  # type: ignore
+        return result  # type: ignore
+
+    @staticmethod
+    def _remove_id(_dict: Mapping[str, Any]):
+        if "_id" in _dict:
+            _dict.pop("_id")  # type: ignore
 
 
-def serialize_delete(collection, item):
+def storage_factory(api: "CobblerAPI") -> MongoDBSerializer:
     """
-    Delete a collection item from database.
-
-    :param collection: collection
-    :param item: collection item
+    TODO
     """
-
-    __connect()
-    collection = mongodb[collection.collection_type()]
-    collection.remove({"name": item.name})
-
-
-def serialize(collection):
-    """
-    Save a collection to database
-
-    :param collection: collection
-    """
-
-    # TODO: error detection
-    ctype = collection.collection_type()
-    if ctype != "settings":
-        for x in collection:
-            serialize_item(collection, x)
-
-
-def deserialize_raw(collection_type: str):
-    """
-    Get a collection from mongodb and parse it into an object.
-
-    :param collection_type: The collection type to fetch.
-    :return: The first element of the collection requested.
-    """
-    if collection_type == "settings":
-        return settings.read_settings_file()
-    else:
-        __connect()
-        collection = mongodb[collection_type]
-        return collection.find()
-
-
-def deserialize(collection, topological: bool = True):
-    """
-    Load a collection from the database.
-
-    :param collection: The collection to deserialize.
-    :param topological: If the collection list should be sorted by the collection dict depth value or not.
-    """
-
-    datastruct = deserialize_raw(collection.collection_type())
-    if topological and type(datastruct) == list:
-        datastruct.sort(key=lambda x: x["depth"])
-    if type(datastruct) == dict:
-        collection.from_dict(datastruct)
-    elif type(datastruct) == list:
-        collection.from_list(datastruct)
+    return MongoDBSerializer(api)

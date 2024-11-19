@@ -2,6 +2,7 @@
 Authentication module that uses /etc/cobbler/auth.conf
 Choice of authentication module is in /etc/cobbler/modules.conf
 """
+
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: Copyright 2007-2009, Red Hat, Inc and Others
 # SPDX-FileCopyrightText: Michael DeHaan <michael.dehaan AT gmail>
@@ -9,19 +10,25 @@ Choice of authentication module is in /etc/cobbler/modules.conf
 
 import hashlib
 import os
-from typing import List
+from typing import TYPE_CHECKING, List
 
-from cobbler.module_loader import get_module_name
+if TYPE_CHECKING:
+    from cobbler.api import CobblerAPI
 
 
-def hashfun(text: str) -> str:
+def hashfun(api: "CobblerAPI", text: str) -> str:
     """
     Converts a str object to a hash which was configured in modules.conf of the Cobbler settings.
 
+    :param api: CobblerAPI
     :param text: The text to hash.
     :return: The hash of the text. This should output the same hash when entered the same text.
     """
-    hashfunction = get_module_name("authentication", "hash_algorithm", "sha3_512")
+    hashfunction = (
+        api.settings()
+        .modules.get("authentication", {})
+        .get("hash_algorithm", "sha3_512")
+    )
     if hashfunction == "sha3_224":
         hashalgorithm = hashlib.sha3_224(text.encode("utf-8"))
     elif hashfunction == "sha3_384":
@@ -39,12 +46,10 @@ def hashfun(text: str) -> str:
     elif hashfunction == "shake_256":
         hashalgorithm = hashlib.shake_256(text.encode("utf-8"))
     else:
-        errortext = (
-            "The hashfunction (Currently: %s) must be one of the defined in /etc/cobbler/modules.conf!"
-            % hashfunction
-        )
+        errortext = f"The hashfunction (Currently: {hashfunction}) must be one of the defined in the settings!"
         raise ValueError(errortext)
-    return hashalgorithm.hexdigest()
+    # FIXME: Add case for SHAKE
+    return hashalgorithm.hexdigest()  # type: ignore
 
 
 def register() -> str:
@@ -62,25 +67,25 @@ def __parse_storage() -> List[List[str]]:
     """
     if not os.path.exists("/etc/cobbler/users.digest"):
         return []
-    with open("/etc/cobbler/users.digest", encoding="utf-8") as fd:
-        data = fd.read()
-    results = []
+    with open("/etc/cobbler/users.digest", encoding="utf-8") as users_digest_fd:
+        data = users_digest_fd.read()
+    results: List[List[str]] = []
     lines = data.split("\n")
     for line in lines:
         try:
             line = line.strip()
             tokens = line.split(":")
             results.append([tokens[0], tokens[1], tokens[2]])
-        except:
+        except Exception:
             pass
     return results
 
 
-def authenticate(api_handle, username: str, password: str) -> bool:
+def authenticate(api_handle: "CobblerAPI", username: str, password: str) -> bool:
     """
     Validate a username/password combo.
 
-    Thanks to http://trac.edgewall.org/ticket/845 for supplying the algorithm info.
+    Thanks to https://trac.edgewall.org/ticket/845 for supplying the algorithm info.
 
     :param api_handle: Unused in this implementation.
     :param username: The username to log in with. Must be contained in /etc/cobbler/users.digest
@@ -89,9 +94,9 @@ def authenticate(api_handle, username: str, password: str) -> bool:
     """
 
     userlist = __parse_storage()
-    for (user, realm, passwordhash) in userlist:
+    for user, realm, passwordhash in userlist:
         if user == username and realm == "Cobbler":
-            calculated_passwordhash = hashfun(password)
+            calculated_passwordhash = hashfun(api_handle, password)
             if calculated_passwordhash == passwordhash:
                 return True
     return False

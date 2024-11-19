@@ -1,133 +1,163 @@
 """
 Reports on automatic installation activity by examining the logs in
 /var/log/cobbler.
-
-Copyright 2007-2009, Red Hat, Inc and Others
-Michael DeHaan <michael.dehaan AT gmail>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
-02110-1301  USA
 """
+
+# SPDX-License-Identifier: GPL-2.0-or-later
+# SPDX-FileCopyrightText: Copyright 2007-2009, Red Hat, Inc and Others
+# SPDX-FileCopyrightText: Michael DeHaan <michael.dehaan AT gmail>
 
 import glob
 import gzip
 import re
 import time
+from typing import TYPE_CHECKING, Any, Dict, List, Union
 
-# ARRAY INDEXES
-MOST_RECENT_START = 0
-MOST_RECENT_STOP = 1
-MOST_RECENT_TARGET = 2
-SEEN_START = 3
-SEEN_STOP = 4
-STATE = 5
+if TYPE_CHECKING:
+    from cobbler.api import CobblerAPI
+
+
+class InstallStatus:
+    """
+    Helper class that represents the current state of the installation of a system or profile.
+    """
+
+    def __init__(self) -> None:
+        """
+        Default constructor.
+        """
+        self.most_recent_start = -1.0
+        self.most_recent_stop = -1.0
+        self.most_recent_target = ""
+        self.seen_start = -1.0
+        self.seen_stop = -1.0
+        self.state = "?"
+
+    def __eq__(self, other: Any) -> bool:
+        """
+        Equality function that overrides the default behavior.
+
+        :param other: Other object.
+        :returns: True in case object is of the same type and all attributes are identical. False otherwise.
+        """
+        if isinstance(other, InstallStatus):
+            return (
+                self.most_recent_start == other.most_recent_start
+                and self.most_recent_stop == other.most_recent_stop
+                and self.most_recent_target == other.most_recent_target
+                and self.seen_start == other.seen_start
+                and self.seen_stop == other.seen_stop
+                and self.state == other.state
+            )
+        return False
 
 
 class CobblerStatusReport:
-    def __init__(self, api, mode: str):
+    """
+    TODO
+    """
+
+    def __init__(self, api: "CobblerAPI", mode: str) -> None:
         """
         Constructor
 
         :param api: The API which holds all information.
-        :param mode: This describes how Cobbler should report. Currently there only the option ``text`` can be set
+        :param mode: This describes how Cobbler should report. Currently, there only the option ``text`` can be set
                      explicitly.
         """
         self.settings = api.settings()
-        self.ip_data = {}
+        self.ip_data: Dict[str, InstallStatus] = {}
         self.mode = mode
 
-    # -------------------------------------------------------
-
-    def scan_logfiles(self):
+    @staticmethod
+    def collect_logfiles() -> List[str]:
         """
-        Scan the install log-files - starting with the oldest file.
+        Collects all installation logfiles from ``/var/log/cobbler/``. This will also collect gzipped logfiles.
+
+        :returns: List of absolute paths that are matching the filepattern ``install.log`` or ``install.log.x``, where
+                  x is a number equal or greater than zero.
         """
         unsorted_files = glob.glob("/var/log/cobbler/install.log*")
-        files_dict = dict()
+        files_dict: Dict[int, str] = {}
         log_id_re = re.compile(r"install.log.(\d+)")
         for fname in unsorted_files:
             id_match = log_id_re.search(fname)
             if id_match:
                 files_dict[int(id_match.group(1))] = fname
 
-        files = list()
-        sorted_ids = sorted(files_dict, key=files_dict.get, reverse=True)
+        files: List[str] = []
+        sorted_ids = sorted(files_dict.keys(), reverse=True)
         for file_id in sorted_ids:
             files.append(files_dict[file_id])
         if "/var/log/cobbler/install.log" in unsorted_files:
             files.append("/var/log/cobbler/install.log")
 
-        for fname in files:
+        return files
+
+    def scan_logfiles(self) -> None:
+        """
+        Scan the installation log-files - starting with the oldest file.
+        """
+        for fname in self.collect_logfiles():
             if fname.endswith(".gz"):
-                fd = gzip.open(fname)
+                logile_fd = gzip.open(fname, "rt")
             else:
-                fd = open(fname)
-            data = fd.read()
+                logile_fd = open(fname, "rt", encoding="UTF-8")
+            data = logile_fd.read()
             for line in data.split("\n"):
                 tokens = line.split()
                 if len(tokens) == 0:
                     continue
-                (profile_or_system, name, ip, start_or_stop, ts) = tokens
-                self.catalog(profile_or_system, name, ip, start_or_stop, ts)
-            fd.close()
-
-    # ------------------------------------------------------
+                (profile_or_system, name, ip_address, start_or_stop, timestamp) = tokens
+                self.catalog(
+                    profile_or_system, name, ip_address, start_or_stop, float(timestamp)
+                )
+            logile_fd.close()
 
     def catalog(
-        self, profile_or_system: str, name: str, ip, start_or_stop: str, ts: float
-    ):
+        self,
+        profile_or_system: str,
+        name: str,
+        ip_address: str,
+        start_or_stop: str,
+        timestamp: float,
+    ) -> None:
         """
         Add a system to ``cobbler status``.
 
         :param profile_or_system: This can be ``system`` or ``profile``.
         :param name: The name of the object.
-        :param ip: The ip of the system to watch.
+        :param ip_address: The ip of the system to watch.
         :param start_or_stop: This parameter may be ``start`` or ``stop``
-        :param ts: Don't know what this does.
+        :param timestamp: Timestamp as returned by ``time.time()``
         """
-        ip_data = self.ip_data
+        if ip_address not in self.ip_data:
+            self.ip_data[ip_address] = InstallStatus()
+        elem = self.ip_data[ip_address]
 
-        if ip not in ip_data:
-            ip_data[ip] = [-1, -1, "?", 0, 0, "?"]
-        elem = ip_data[ip]
+        timestamp = float(timestamp)
 
-        ts = float(ts)
-
-        mrstart = elem[MOST_RECENT_START]
-        mrstop = elem[MOST_RECENT_STOP]
-        mrtarg = elem[MOST_RECENT_TARGET]
+        mrstart = elem.most_recent_start
+        mrstop = elem.most_recent_stop
+        mrtarg = elem.most_recent_target
 
         if start_or_stop == "start":
-            if mrstart < ts:
-                mrstart = ts
-                mrtarg = "%s:%s" % (profile_or_system, name)
-                elem[SEEN_START] += 1
+            if mrstart < timestamp:
+                mrstart = timestamp
+                mrtarg = f"{profile_or_system}:{name}"
+                elem.seen_start += 1
 
         if start_or_stop == "stop":
-            if mrstop < ts:
-                mrstop = ts
-                mrtarg = "%s:%s" % (profile_or_system, name)
-                elem[SEEN_STOP] += 1
+            if mrstop < timestamp:
+                mrstop = timestamp
+                mrtarg = f"{profile_or_system}:{name}"
+                elem.seen_stop += 1
 
-        elem[MOST_RECENT_START] = mrstart
-        elem[MOST_RECENT_STOP] = mrstop
-        elem[MOST_RECENT_TARGET] = mrtarg
+        elem.most_recent_start = mrstart
+        elem.most_recent_stop = mrstop
+        elem.most_recent_target = mrtarg
 
-    # -------------------------------------------------------
-
-    def process_results(self):
+    def process_results(self) -> Dict[Any, Any]:
         """
         Look through all systems which were collected and update the status.
 
@@ -135,53 +165,49 @@ class CobblerStatusReport:
         """
         # FIXME: this should update the times here
         tnow = int(time.time())
-        for ip in list(self.ip_data.keys()):
-            elem = self.ip_data[ip]
-            start = int(elem[MOST_RECENT_START])
-            stop = int(elem[MOST_RECENT_STOP])
+        for _, elem in self.ip_data.items():
+            start = int(elem.most_recent_start)
+            stop = int(elem.most_recent_stop)
             if stop > start:
-                elem[STATE] = "finished"
+                elem.state = "finished"
             else:
                 delta = tnow - start
-                min = delta // 60
-                sec = delta % 60
-                if min > 100:
-                    elem[STATE] = "unknown/stalled"
+                minutes = delta // 60
+                seconds = delta % 60
+                if minutes > 100:
+                    elem.state = "unknown/stalled"
                 else:
-                    elem[STATE] = "installing (%sm %ss)" % (min, sec)
+                    elem.state = f"installing ({minutes}m {seconds}s)"
 
         return self.ip_data
 
-    def get_printable_results(self):
+    def get_printable_results(self) -> str:
         """
-        Convert the status of Cobbler from a machine readable form to human readable.
+        Convert the status of Cobbler from a machine-readable form to human-readable.
 
         :return: A nice formatted representation of the results of ``cobbler status``.
         """
-        format = "%-15s|%-20s|%-17s|%-17s"
-        ip_data = self.ip_data
-        ips = list(ip_data.keys())
-        ips.sort()
+        printable_status_format = "%-15s|%-20s|%-17s|%-17s"
+        ip_addresses = list(self.ip_data.keys())
+        ip_addresses.sort()
         line = (
             "ip",
             "target",
             "start",
             "state",
         )
-        buf = format % line
-        for ip in ips:
-            elem = ip_data[ip]
-            if elem[MOST_RECENT_START] > -1:
-                start = time.ctime(elem[MOST_RECENT_START])
+        buf = printable_status_format % line
+        for ip_address in ip_addresses:
+            elem = self.ip_data[ip_address]
+            if elem.most_recent_start > -1:
+                start = time.ctime(elem.most_recent_start)
             else:
                 start = "Unknown"
-            line = (ip, elem[MOST_RECENT_TARGET], start, elem[STATE])
-            buf += "\n" + format % line
+            line = (ip_address, elem.most_recent_target, start, elem.state)
+            buf += "\n" + printable_status_format % line
         return buf
 
-    # -------------------------------------------------------
-
-    def run(self):
+    def run(self) -> Union[Dict[Any, Any], str]:
         """
         Calculate and print a automatic installation status report.
         """
@@ -189,5 +215,4 @@ class CobblerStatusReport:
         results = self.process_results()
         if self.mode == "text":
             return self.get_printable_results()
-        else:
-            return results
+        return results

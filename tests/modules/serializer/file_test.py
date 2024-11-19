@@ -1,21 +1,73 @@
 import json
 import os
 import pathlib
+from typing import Any, Dict, List, Union
+from unittest.mock import MagicMock
 
-from unittest.mock import Mock, MagicMock
 import pytest
-from cobbler.cobbler_collections.collection import Collection
-from cobbler.modules.serializers import file
+from pytest_mock import MockerFixture
+
+from cobbler.api import CobblerAPI
 from cobbler.cexceptions import CX
+from cobbler.cobbler_collections.collection import Collection
+from cobbler.items.abstract.bootable_item import BootableItem
+from cobbler.modules.serializers import file
 from cobbler.settings import Settings
 
+from tests.conftest import does_not_raise
 
-@pytest.fixture(scope="function", autouse=True)
-def restore_libpath():
-    file.libpath = "/var/lib/cobbler/collections"
+
+class MockBootableItem(BootableItem):
+    """
+    Test Item for the serializer tests.
+    """
+
+    def make_clone(self) -> "MockBootableItem":
+        return MockBootableItem(self.api)
+
+
+class MockCollection(Collection[MockBootableItem]):
+    """
+    Test Collection that is used for the serializer tests.
+    """
+
+    @staticmethod
+    def collection_type() -> str:
+        return "test"
+
+    @staticmethod
+    def collection_types() -> str:
+        return "tests"
+
+    def factory_produce(
+        self, api: "CobblerAPI", seed_data: Dict[Any, Any]
+    ) -> MockBootableItem:
+        new_test = MockBootableItem(api)
+        return new_test
+
+    def remove(
+        self,
+        name: str,
+        with_delete: bool = True,
+        with_sync: bool = True,
+        with_triggers: bool = True,
+        recursive: bool = False,
+    ) -> None:
+        del self.listing[name]
+
+
+@pytest.fixture()
+def serializer_obj(cobbler_api: CobblerAPI):
+    """
+    Generates an empty serializer object that is ready to be used.
+    """
+    return file.FileSerializer(cobbler_api)
 
 
 def test_register():
+    """
+    Test that will assert if the return value of the register method is correct.
+    """
     # Arrange
     # Act
     result = file.register()
@@ -26,6 +78,9 @@ def test_register():
 
 
 def test_what():
+    """
+    Test that will assert if the return value of the identity hook of the module is correct.
+    """
     # Arrange
     # Act
     result = file.what()
@@ -35,72 +90,102 @@ def test_what():
     assert result == "serializer/file"
 
 
-def test_find_double_json_files_1(tmpdir: pathlib.Path):
+def test_storage_factory(cobbler_api: CobblerAPI):
+    """
+    Test that will assert if the factory can successfully generate a FileSerializer object.
+    """
     # Arrange
-    file_one = tmpdir.join("double.json")
-    file_double = tmpdir.join("double.json.json")
+
+    # Act
+    result = file.storage_factory(cobbler_api)
+
+    # Assert
+    assert isinstance(result, file.FileSerializer)
+
+
+def test_find_double_json_files_1(tmpdir: pathlib.Path):
+    """
+    Test that will assert if JSON files with duplicated file extension are correctly cleaned up.
+    """
+    # Arrange
+    file_one = tmpdir / "double.json"
+    file_double = tmpdir / "double.json.json"
     with open(file_double, "w") as duplicate:
         duplicate.write("double\n")
 
     # Act
-    file.__find_double_json_files(file_one)
+    file._find_double_json_files(str(file_one))  # type: ignore
 
     # Assert
     assert os.path.isfile(file_one)
 
 
 def test_find_double_json_files_raise(tmpdir: pathlib.Path):
+    """
+    Test that will assert if a rename operation for a duplicated JSON fill will correctly raise.
+    """
     # Arrange
-    file_one = tmpdir.join("double.json")
-    file_double = tmpdir.join("double.json.json")
-    with open(file_one, "w") as duplicate:
+    file_one = tmpdir / "double.json"
+    file_double = tmpdir / "double.json.json"
+    with open(file_one, "w", encoding="UTF-8") as duplicate:
         duplicate.write("one\n")
-    with open(file_double, "w") as duplicate:
+    with open(file_double, "w", encoding="UTF-8") as duplicate:
         duplicate.write("double\n")
 
     # Act and assert
     with pytest.raises(FileExistsError):
-        file.__find_double_json_files(file_one)
+        file._find_double_json_files(str(file_one))  # type: ignore
 
 
-def test_serialize_item_raise():
+def test_serialize_item_raise(
+    mocker: MockerFixture, serializer_obj: file.FileSerializer
+):
     # Arrange
-    mitem = Mock()
-    mcollection = Mock()
+    mitem = mocker.Mock()
+    mcollection = mocker.Mock()
     mitem.name = ""
 
     # Act and assert
     with pytest.raises(CX):
-        file.serialize_item(mcollection, mitem)
+        serializer_obj.serialize_item(mcollection, mitem)
 
 
-def test_serialize_item(tmpdir: pathlib.Path):
+def test_serialize_item(
+    tmpdir: pathlib.Path, serializer_obj: file.FileSerializer, cobbler_api: CobblerAPI
+):
+    """
+    Test that will assert if a given item can be written to disk successfully.
+    """
     # Arrange
-    file.libpath = tmpdir
-    os.mkdir(os.path.join(tmpdir, "distros"))
-    expected_file = os.path.join(tmpdir, "distros", "test_serializer.json")
-    mitem = Mock()
+    serializer_obj.libpath = str(tmpdir)
+    mitem = MockBootableItem(cobbler_api)
     mitem.name = "test_serializer"
-    mcollection = Mock()
-    mcollection.collection_types.return_value = "distros"
-    mitem.serialize.return_value = {"name": mitem.name}
+    mcollection = MockCollection(cobbler_api._collection_mgr)  # type: ignore
+    os.mkdir(os.path.join(tmpdir, mcollection.collection_types()))
+    expected_file = os.path.join(
+        tmpdir, mcollection.collection_types(), f"{mitem.name}.json"
+    )
 
     # Act
-    file.serialize_item(mcollection, mitem)
+    serializer_obj.serialize_item(mcollection, mitem)
 
     # Assert
     assert os.path.exists(expected_file)
-    with open(expected_file, "r") as json_file:
+    with open(expected_file, "r", encoding="UTF-8") as json_file:
         assert json.load(json_file) == mitem.serialize()
 
 
-def test_serialize_delete(tmpdir: pathlib.Path):
+def test_serialize_delete(
+    tmpdir: pathlib.Path, serializer_obj: file.FileSerializer, cobbler_api: CobblerAPI
+):
+    """
+    Test that will assert if a given item can be deleted.
+    """
     # Arrange
-    mitem = Mock()
+    mitem = MockBootableItem(cobbler_api)
     mitem.name = "test_serializer_del"
-    mcollection = Mock()
-    file.libpath = tmpdir
-    mcollection.collection_types.return_value = "distros"
+    mcollection = MockCollection(cobbler_api._collection_mgr)  # type: ignore
+    serializer_obj.libpath = str(tmpdir)
     os.mkdir(os.path.join(tmpdir, mcollection.collection_types()))
     expected_path = os.path.join(
         tmpdir, mcollection.collection_types(), mitem.name + ".json"
@@ -108,7 +193,7 @@ def test_serialize_delete(tmpdir: pathlib.Path):
     pathlib.Path(expected_path).touch()
 
     # Act
-    file.serialize_delete(mcollection, mitem)
+    serializer_obj.serialize_delete(mcollection, mitem)
 
     # Assert
     assert not os.path.exists(expected_path)
@@ -116,28 +201,29 @@ def test_serialize_delete(tmpdir: pathlib.Path):
 
 @pytest.mark.parametrize(
     "input_collection_type,input_collection",
-    [("settings", {}), ("distros", MagicMock())],
+    [("distros", MagicMock())],
 )
-def test_serialize(input_collection_type, input_collection, mocker):
+def test_serialize(
+    mocker: MockerFixture,
+    input_collection_type: str,
+    input_collection: Union[Dict[Any, Any], MagicMock],
+    serializer_obj: file.FileSerializer,
+):
     # Arrange
     stub = mocker.stub()
-    mocker.patch("cobbler.modules.serializers.file.serialize_item", new=stub)
+    mocker.patch.object(serializer_obj, "serialize_item", new=stub)
     if input_collection_type == "settings":
         mock = Settings()
     else:
-        mocker.patch(
-            "cobbler.cobbler_collections.collection.Collection.collection_types",
-            return_value=input_collection_type,
-        )
-        mocker.patch(
-            "cobbler.cobbler_collections.collection.Collection.collection_type",
-            return_value="",
-        )
-        mock = Collection(MagicMock())
+        mock = MockCollection(mocker.MagicMock())
         mock.listing["test"] = input_collection
+        mocker.patch.object(mock, "collection_type", return_value="")
+        mocker.patch.object(
+            mock, "collection_types", return_value=input_collection_type
+        )
 
     # Act
-    file.serialize(mock)
+    serializer_obj.serialize(mock)  # type: ignore
 
     # Assert
     if input_collection_type == "settings":
@@ -150,16 +236,24 @@ def test_serialize(input_collection_type, input_collection, mocker):
 @pytest.mark.parametrize(
     "input_collection_type,expected_result,settings_read",
     [
-        ("settings", {}, True),
         ("distros", [], False),
     ],
 )
-def test_deserialize_raw(input_collection_type, expected_result, settings_read, mocker):
+def test_deserialize_raw(
+    mocker: MockerFixture,
+    input_collection_type: str,
+    expected_result: Union[List[Any], Dict[Any, Any]],
+    settings_read: bool,
+    serializer_obj: file.FileSerializer,
+):
+    """
+    Test that will assert if a given item can be deserilized in raw.
+    """
     # Arrange
     mocker.patch("cobbler.settings.read_settings_file", return_value=expected_result)
 
     # Act
-    result = file.deserialize_raw(input_collection_type)
+    result = serializer_obj.deserialize_raw(input_collection_type)
 
     # Assert
     assert result == expected_result
@@ -168,8 +262,6 @@ def test_deserialize_raw(input_collection_type, expected_result, settings_read, 
 @pytest.mark.parametrize(
     "input_collection_type,input_collection,input_topological,expected_result",
     [
-        ("settings", {}, True, {}),
-        ("settings", {}, False, {}),
         (
             "distros",
             [{"depth": 2, "name": False}, {"depth": 1, "name": True}],
@@ -197,11 +289,20 @@ def test_deserialize_raw(input_collection_type, expected_result, settings_read, 
     ],
 )
 def test_deserialize(
-    input_collection_type, input_collection, input_topological, expected_result, mocker
+    mocker: MockerFixture,
+    input_collection_type: str,
+    input_collection: Union[Dict[Any, Any], List[Dict[Any, Any]]],
+    input_topological: bool,
+    expected_result: Union[Dict[Any, Any], List[Dict[Any, Any]]],
+    serializer_obj: file.FileSerializer,
 ):
+    """
+    Test that will assert if a given item can be successfully deserialized.
+    """
     # Arrange
-    mocker.patch(
-        "cobbler.modules.serializers.file.deserialize_raw",
+    mocker.patch.object(
+        serializer_obj,
+        "deserialize_raw",
         return_value=input_collection,
     )
     if input_collection_type == "settings":
@@ -210,16 +311,57 @@ def test_deserialize(
         mocker.patch.object(mock, "from_dict", new=stub_from)
     else:
         stub_from = mocker.stub(name="from_list_stub")
-        mock = Collection(MagicMock())
+        mock = MockCollection(mocker.MagicMock())
         mocker.patch.object(mock, "from_list", new=stub_from)
-        mocker.patch(
-            "cobbler.cobbler_collections.collection.Collection.collection_types",
-            return_value=input_collection_type,
+        mocker.patch.object(
+            mock, "collection_types", return_value=input_collection_type
         )
 
     # Act
-    file.deserialize(mock, input_topological)
+    serializer_obj.deserialize(mock, input_topological)  # type: ignore
 
     # Assert
     assert stub_from.called
     stub_from.assert_called_with(expected_result)
+
+
+@pytest.mark.parametrize(
+    "input_collection_type,input_item,expected_result,expected_exception",
+    [
+        (
+            "distros",
+            {"name": "test"},
+            {"name": "test", "inmemory": True},
+            does_not_raise(),
+        ),
+        (
+            "distros",
+            {"name": "test"},
+            {"name": "fake", "inmemory": True},
+            pytest.raises(CX),
+        ),
+    ],
+)
+def test_deserialize_item(
+    mocker: MockerFixture,
+    input_collection_type: str,
+    input_item: Dict[str, str],
+    expected_result: Dict[str, Union[str, bool]],
+    expected_exception: Any,
+    serializer_obj: file.FileSerializer,
+):
+    """
+    TODO
+    """
+    # Arrange
+    mocked_input = mocker.mock_open(read_data=json.dumps(input_item))()
+    mocker.patch("builtins.open", return_value=mocked_input)
+
+    # Act
+    with expected_exception:
+        result = serializer_obj.deserialize_item(
+            input_collection_type, expected_result["name"]  # type: ignore[reportGeneralTypeIssues]
+        )
+
+        # Assert
+        assert result == expected_result

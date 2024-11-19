@@ -1,19 +1,27 @@
+"""
+Tests that validate the functionality of the module that is responsible for managing the genders config file.
+"""
+
 import time
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import pytest
 
 from cobbler.api import CobblerAPI
-from cobbler.modules.managers import genders
-from cobbler.settings import Settings
 from cobbler.items.distro import Distro
 from cobbler.items.profile import Profile
 from cobbler.items.system import System
-from cobbler.items.mgmtclass import Mgmtclass
+from cobbler.modules.managers import genders
+from cobbler.settings import Settings
+
+if TYPE_CHECKING:
+    from pytest_mock import MockerFixture
 
 
 @pytest.fixture
-def api_genders_mock():
+def api_genders_mock() -> CobblerAPI:
+    # pylint: disable=protected-access
     settings_mock = MagicMock(name="genders_setting_mock", spec=Settings)
     settings_mock.server = "127.0.0.1"
     settings_mock.default_template_type = "cheetah"
@@ -37,6 +45,7 @@ def api_genders_mock():
     settings_mock.manage_genders = True
     settings_mock.jinja2_includedir = ""
     settings_mock.default_virt_disk_driver = "raw"
+    settings_mock.cache_enabled = False
     api_mock = MagicMock(autospec=True, spec=CobblerAPI)
     api_mock.settings.return_value = settings_mock
     test_distro = Distro(api_mock)
@@ -44,16 +53,13 @@ def api_genders_mock():
     api_mock.distros.return_value = [test_distro]
     test_profile = Profile(api_mock)
     test_profile.name = "test_profile"
-    test_profile._parent = test_distro.name
+    test_profile._parent = test_distro.name  # type: ignore[reportPrivateUsage]
     api_mock.profiles.return_value = [test_profile]
     test_system = System(api_mock)
     test_system.name = "test_system"
-    test_system._parent = test_profile.name
+    test_system._parent = test_profile.name  # type: ignore[reportPrivateUsage]
     api_mock.find_system.return_value = [test_system]
     api_mock.systems.return_value = [test_system]
-    test_mgmtclass = Mgmtclass(api_mock)
-    test_mgmtclass.name = "test_mgmtclass"
-    api_mock.mgmtclasses.return_value = [test_mgmtclass]
     return api_mock
 
 
@@ -66,7 +72,7 @@ def test_register():
     assert result == "/var/lib/cobbler/triggers/change/*"
 
 
-def test_write_genders_file(mocker, api_genders_mock):
+def test_write_genders_file(mocker: "MockerFixture", api_genders_mock: CobblerAPI):
     # Arrange
     templar_mock = mocker.patch(
         "cobbler.modules.managers.genders.Templar", autospec=True
@@ -80,9 +86,9 @@ def test_write_genders_file(mocker, api_genders_mock):
     # Act
     genders.write_genders_file(
         api_genders_mock,
-        "profiles_genders_value",
-        "distros_genders_value",
-        "mgmtcls_genders_value",
+        "profiles_genders_value",  # type: ignore[reportArgumentType]
+        "distros_genders_value",  # type: ignore[reportArgumentType]
+        "mgmtcls_genders_value",  # type: ignore[reportArgumentType]
     )
 
     # Assert
@@ -99,7 +105,7 @@ def test_write_genders_file(mocker, api_genders_mock):
     )
 
 
-def test_run(mocker, api_genders_mock):
+def test_run(mocker: "MockerFixture", api_genders_mock: CobblerAPI):
     # Arrange
     genders_mock = mocker.patch(
         "cobbler.modules.managers.genders.write_genders_file", autospec=True
@@ -113,6 +119,6 @@ def test_run(mocker, api_genders_mock):
         api_genders_mock,
         {"test_profile": "test_system"},
         {"test_distro": "test_system"},
-        {"test_mgmtclass": "test_system"},
+        {},
     )
     assert result == 0

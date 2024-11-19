@@ -1,16 +1,20 @@
-# (c) 2008-2009
-# Jeff Schroeder <jeffschroeder@computer.org>
-# Michael DeHaan <michael.dehaan AT gmail>
-#
-# License: GPLv2+
+"""
+Post install trigger for Cobbler to send out a pretty email report that contains target information.
+"""
 
-# Post install trigger for Cobbler to send out a pretty email report that contains target information.
+# SPDX-License-Identifier: GPL-2.0-or-later
+# SPDX-FileCopyrightText: Copyright 2008-2009 Bill Peck <bpeck@redhat.com>
+# SPDX-FileCopyrightText: Michael DeHaan <michael.dehaan AT gmail>
 
-from builtins import str
 import smtplib
+from builtins import str
+from typing import TYPE_CHECKING, List
+
+from cobbler import templar, utils
 from cobbler.cexceptions import CX
-import cobbler.templar as templar
-import cobbler.utils as utils
+
+if TYPE_CHECKING:
+    from cobbler.api import CobblerAPI
 
 
 def register() -> str:
@@ -24,7 +28,7 @@ def register() -> str:
     return "/var/lib/cobbler/triggers/install/post/*"
 
 
-def run(api, args) -> int:
+def run(api: "CobblerAPI", args: List[str]) -> int:
     """
     This is the mandatory Cobbler module run trigger hook.
 
@@ -55,6 +59,9 @@ def run(api, args) -> int:
     else:
         return 1
 
+    if target is None or isinstance(target, list):
+        raise ValueError("Error retrieving system/profile.")
+
     # collapse the object down to a rendered datastructure
     target = utils.blender(api, False, target)
 
@@ -62,7 +69,7 @@ def run(api, args) -> int:
         raise CX("failure looking up target")
 
     to_addr = settings.build_reporting_email
-    if to_addr == "":
+    if len(to_addr) < 1:
         return 0
 
     # add the ability to specify an MTA for servers that don't run their own
@@ -73,7 +80,7 @@ def run(api, args) -> int:
     # use a custom from address or fall back to a reasonable default
     from_addr = settings.build_reporting_sender
     if from_addr == "":
-        from_addr = "cobbler@%s" % settings.server
+        from_addr = f"cobbler@{settings.server}"
 
     subject = settings.build_reporting_subject
     if subject == "":
@@ -88,14 +95,16 @@ def run(api, args) -> int:
     }
     metadata.update(target)
 
-    with open("/etc/cobbler/reporting/build_report_email.template") as input_template:
+    with open(
+        "/etc/cobbler/reporting/build_report_email.template", encoding="UTF-8"
+    ) as input_template:
         input_data = input_template.read()
 
         message = templar.Templar(api).render(input_data, metadata, None)
 
         sendmail = True
         for prefix in settings.build_reporting_ignorelist:
-            if prefix != "" and name.lower().startswith(prefix):
+            if prefix != "" and name.startswith(prefix):
                 sendmail = False
 
         if sendmail:

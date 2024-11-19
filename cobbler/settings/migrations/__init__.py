@@ -4,9 +4,11 @@ One migration should update from version x to x + 1, where X is any Cobbler vers
 any next version (e.g. 3.2.1 to 3.3.0).
 The validation of the current version is in the file with the name of the version.
 """
+
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: 2021 Dominik Gedon <dgedon@suse.de>
 # SPDX-FileCopyrightText: 2021 Enno Gotthold <egotthold@suse.de>
+# SPDX-FileCopyrightText: 2022 Pablo Suárez Hernández <psuarezhernandez@suse.de>
 # SPDX-FileCopyrightText: Copyright SUSE LLC
 
 
@@ -22,9 +24,9 @@ from importlib import import_module
 from inspect import signature
 from pathlib import Path
 from types import ModuleType
-from typing import Dict, List, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
-from schema import Schema
+from schema import Schema  # type: ignore
 
 import cobbler
 
@@ -41,7 +43,7 @@ class CobblerVersion:
     Specifies a Cobbler Version
     """
 
-    def __init__(self, major: int = 0, minor: int = 0, patch: int = 0):
+    def __init__(self, major: int = 0, minor: int = 0, patch: int = 0) -> None:
         """
         Constructor
         """
@@ -49,7 +51,7 @@ class CobblerVersion:
         self.minor = int(minor)
         self.patch = int(patch)
 
-    def __eq__(self, other: object):
+    def __eq__(self, other: object) -> bool:
         """
         Compares 2 CobblerVersion objects for equality. Necesarry for the tests.
         """
@@ -61,10 +63,10 @@ class CobblerVersion:
             and self.patch == other.patch
         )
 
-    def __ne__(self, other: object):
+    def __ne__(self, other: object) -> bool:
         return not self.__eq__(other)
 
-    def __lt__(self, other: object):
+    def __lt__(self, other: object) -> bool:
         if not isinstance(other, CobblerVersion):
             raise TypeError
         if self.major < other.major:
@@ -77,12 +79,12 @@ class CobblerVersion:
                     return True
         return False
 
-    def __le__(self, other: object):
+    def __le__(self, other: object) -> bool:
         if self.__lt__(other) or self.__eq__(other):
             return True
         return False
 
-    def __gt__(self, other: object):
+    def __gt__(self, other: object) -> bool:
         if not isinstance(other, CobblerVersion):
             raise TypeError
         if self.major > other.major:
@@ -95,23 +97,19 @@ class CobblerVersion:
                     return True
         return False
 
-    def __ge__(self, other: object):
+    def __ge__(self, other: object) -> bool:
         if self.__gt__(other) or self.__eq__(other):
             return True
         return False
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash((self.major, self.minor, self.patch))
 
     def __str__(self) -> str:
-        return "CobblerVersion: %s.%s.%s" % (self.major, self.minor, self.patch)
+        return f"CobblerVersion: {self.major}.{self.minor}.{self.patch}"
 
     def __repr__(self) -> str:
-        return "CobblerVersion(major=%s, minor=%s, patch=%s)" % (
-            self.major,
-            self.minor,
-            self.patch,
-        )
+        return f"CobblerVersion(major={self.major}, minor={self.minor}, patch={self.patch})"
 
 
 EMPTY_VERSION = CobblerVersion()
@@ -129,11 +127,11 @@ def __validate_module(name: ModuleType) -> bool:
     :return: True if every criteria is met otherwise False.
     """
     module_methods = {
-        "validate": "(settings:dict)->bool",
-        "normalize": "(settings:dict)->dict",
-        "migrate": "(settings:dict)->dict",
+        "validate": "(settings:Dict[str,Any])->bool",
+        "normalize": "(settings:Dict[str,Any])->Dict[str,Any]",
+        "migrate": "(settings:Dict[str,Any])->Dict[str,Any]",
     }
-    for (key, value) in module_methods.items():
+    for key, value in module_methods.items():
         if not hasattr(name, key):
             return False
         sig = str(signature(getattr(name, key))).replace(" ", "")
@@ -142,30 +140,66 @@ def __validate_module(name: ModuleType) -> bool:
     return True
 
 
-def __load_migration_modules(name: str, version: List[str]):
+def __load_migration_modules(name: str, version: List[str]) -> None:
     """
     Loads migration specific modules and if valid adds it to ``VERSION_LIST``.
 
     :param name: The name of the module to load.
     :param version: The migration version as list.
     """
-    module = import_module("cobbler.settings.migrations.%s" % name)
+    module = import_module(f"cobbler.settings.migrations.{name}")
     logger.info("Loaded migrations: %s", name)
     if __validate_module(module):
-        VERSION_LIST[CobblerVersion(*version)] = module
+        version_list_int = [int(i) for i in version]
+        VERSION_LIST[CobblerVersion(*version_list_int)] = module
     else:
         logger.warning('Exception raised when loading migrations module "%s"', name)
 
 
-def get_settings_file_version(yaml_dict: dict) -> CobblerVersion:
+def filter_settings_to_validate(
+    settings: Dict[str, Any], ignore_keys: Optional[List[str]] = None
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """
+    Separate settings to validate from the ones to exclude from validation
+    according to "ignore_keys" parameter and "extra_settings_list" setting value.
+
+    :param settings: The settings dict to validate.
+    :param ignore_keys: The list of ignore keys to exclude from validation.
+    :return data: The filtered settings to validate
+    :return data_to_exclude: The settings that were excluded from the validation
+    """
+    if not ignore_keys:
+        ignore_keys = []
+
+    extra_settings = settings.get("extra_settings_list", [])
+    data_to_exclude = {
+        k: settings[k] for k in settings if k in ignore_keys or k in extra_settings
+    }
+    data = {
+        x: settings[x]
+        for x in settings
+        if x not in ignore_keys and x not in extra_settings
+    }
+    return data, data_to_exclude
+
+
+def get_settings_file_version(
+    yaml_dict: Dict[str, Any], ignore_keys: Optional[List[str]] = None
+) -> CobblerVersion:
     """
     Return the correspondig version of the given settings dict.
 
     :param yaml_dict: The settings dict to get the version from.
+    :param ignore_keys: The list of ignore keys to exclude from validation.
     :return: The discovered Cobbler Version or ``EMPTY_VERSION``
     """
-    for (version, module_name) in VERSION_LIST.items():
-        if module_name.validate(yaml_dict):
+    if not ignore_keys:
+        ignore_keys = []
+
+    # Extra settings and ignored keys are excluded from validation
+    data, _ = filter_settings_to_validate(yaml_dict, ignore_keys)
+    for version, module_name in VERSION_LIST.items():
+        if module_name.validate(data):
             return version
     return EMPTY_VERSION
 
@@ -192,7 +226,7 @@ def get_installed_version(
         # filepath does not exists
         return EMPTY_VERSION
     version = config["cobbler"]["version"].split(".")
-    return CobblerVersion(version[0], version[1], version[2])
+    return CobblerVersion(int(version[0]), int(version[1]), int(version[2]))
 
 
 def get_schema(version: CobblerVersion) -> Schema:
@@ -205,7 +239,7 @@ def get_schema(version: CobblerVersion) -> Schema:
     return VERSION_LIST[version].schema
 
 
-def discover_migrations(path: str = migrations_path):
+def discover_migrations(path: str = migrations_path) -> None:
     """
     Discovers the migration module for each Cobbler version and loads it if it is valid according to certain conditions:
         * the module must contain the following methods: validate(), normalize(), migrate()
@@ -213,7 +247,7 @@ def discover_migrations(path: str = migrations_path):
 
     :param path: The path of the migration modules, defaults to migrations_path
     """
-    filenames = glob.glob("%s/V[0-9]*_[0-9]*_[0-9]*.py" % path)
+    filenames = glob.glob(f"{path}/V[0-9]*_[0-9]*_[0-9]*.py")
     for files in filenames:
         basename = files.replace(path, "")
         migration_name = ""
@@ -227,19 +261,27 @@ def discover_migrations(path: str = migrations_path):
         __load_migration_modules(migration_name, version)
 
 
-def auto_migrate(yaml_dict: dict, settings_path: Path) -> dict:
+def auto_migrate(
+    yaml_dict: Dict[str, Any],
+    settings_path: Path,
+    ignore_keys: Optional[List[str]] = None,
+) -> Dict[str, Any]:
     """
     Auto migration to the most recent version.
 
     :param yaml_dict: The settings dict to migrate.
+    :param ignore_keys: The list of ignore keys to exclude from auto migration.
     :param settings_path: The path of the settings dict.
     :return: The migrated dict.
     """
+    if not ignore_keys:
+        ignore_keys = []
+
     if not yaml_dict.get("auto_migrate_settings", True):
         raise RuntimeError(
             "Settings automigration disabled but required for starting the daemon!"
         )
-    settings_version = get_settings_file_version(yaml_dict)
+    settings_version = get_settings_file_version(yaml_dict, ignore_keys)
     if settings_version == EMPTY_VERSION:
         raise RuntimeError("Automigration not possible due to undiscoverable settings!")
 
@@ -250,17 +292,22 @@ def auto_migrate(yaml_dict: dict, settings_path: Path) -> dict:
         if index == len(migrations) - 1:
             break
         yaml_dict = migrate(
-            yaml_dict, settings_path, migrations[index], migrations[index + 1]
+            yaml_dict,
+            settings_path,
+            migrations[index],
+            migrations[index + 1],
+            ignore_keys,
         )
     return yaml_dict
 
 
 def migrate(
-    yaml_dict: dict,
+    yaml_dict: Dict[str, Any],
     settings_path: Path,
     old: CobblerVersion = EMPTY_VERSION,
     new: CobblerVersion = EMPTY_VERSION,
-) -> dict:
+    ignore_keys: Optional[List[str]] = None,
+) -> Dict[str, Any]:
     """
     Migration to a specific version. If no old and new version is supplied it will call ``auto_migrate()``.
 
@@ -268,20 +315,32 @@ def migrate(
     :param settings_path: The path of the settings dict.
     :param old: The version to migrate from, defaults to EMPTY_VERSION.
     :param new: The version to migrate to, defaults to EMPTY_VERSION.
+    :param ignore_keys: The list of settings ot be excluded from migration.
     :raises ValueError: Raised if attempting to downgraade.
     :return: The migrated dict.
     """
+    if not ignore_keys:
+        ignore_keys = []
+
     # If no version supplied do auto migrations
     if old == EMPTY_VERSION and new == EMPTY_VERSION:
-        return auto_migrate(yaml_dict, settings_path)
+        return auto_migrate(yaml_dict, settings_path, ignore_keys)
 
-    if old == EMPTY_VERSION or new == EMPTY_VERSION:
+    if EMPTY_VERSION in (old, new):
         raise ValueError(
             "Either both or no versions must be specified for a migration!"
         )
 
+    # Extra settings and ignored keys are excluded from validation
+    data, data_to_exclude_from_validation = filter_settings_to_validate(
+        yaml_dict, ignore_keys
+    )
+
     if old == new:
-        return VERSION_LIST[old].normalize(yaml_dict)
+        data = VERSION_LIST[old].normalize(data)
+        # Put back settings excluded form validation
+        data.update(data_to_exclude_from_validation)
+        return data
 
     # If both versions are present, check if old < new and then migrate the appropriate versions.
     if old > new:
@@ -291,32 +350,65 @@ def migrate(
     migration_list = sorted_version_list[
         sorted_version_list.index(old) + 1 : sorted_version_list.index(new) + 1
     ]
+
     for key in migration_list:
-        yaml_dict = VERSION_LIST[key].migrate(yaml_dict)
-    return yaml_dict
+        data = VERSION_LIST[key].migrate(data)
+
+    # Put back settings excluded form validation
+    data.update(data_to_exclude_from_validation)
+    return data
 
 
-def validate(settings: dict, settings_path: Path = "") -> bool:
+def validate(
+    settings: Dict[str, Any],
+    settings_path: Path,
+    ignore_keys: Optional[List[str]] = None,
+) -> bool:
     """
     Wrapper function for the validate() methods of the individual migration modules.
 
     :param settings: The settings dict to validate.
     :param settings_path: TODO: not used at the moment
+    :param ignore_keys: The list of settings ot be excluded from validation.
     :return: True if settings are valid, otherwise False.
     """
+    if not ignore_keys:
+        ignore_keys = []
+
     version = get_installed_version()
-    return VERSION_LIST[version].validate(settings)
+
+    # Extra settings and ignored keys are excluded from validation
+    data, _ = filter_settings_to_validate(settings, ignore_keys)
+
+    result: bool = VERSION_LIST[version].validate(data)
+    return result
 
 
-def normalize(settings: dict) -> dict:
+def normalize(
+    settings: Dict[str, Any], ignore_keys: Optional[List[str]] = None
+) -> Dict[str, Any]:
     """
     If data in ``settings`` is valid the validated data is returned.
 
     :param settings: The settings dict to validate.
+    :param ignore_keys: The list of settings ot be excluded from normalization.
     :return: The validated dict.
     """
+    if not ignore_keys:
+        ignore_keys = []
+
     version = get_installed_version()
-    return VERSION_LIST[version].normalize(settings)
+
+    # Extra settings and ignored keys are excluded from validation
+    data, data_to_exclude_from_validation = filter_settings_to_validate(
+        settings, ignore_keys
+    )
+
+    result: Dict[str, Any] = VERSION_LIST[version].normalize(data)
+
+    # Put back settings excluded form validation
+    result.update(data_to_exclude_from_validation)
+    return result
 
 
 discover_migrations()

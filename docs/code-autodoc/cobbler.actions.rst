@@ -1,6 +1,14 @@
 cobbler.actions package
 =======================
 
+Subpackages
+-----------
+
+.. toctree::
+   :maxdepth: 4
+
+   cobbler.actions.buildiso
+
 Submodules
 ----------
 
@@ -8,14 +16,6 @@ cobbler.actions.acl module
 --------------------------
 
 .. automodule:: cobbler.actions.acl
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-cobbler.actions.buildiso module
--------------------------------
-
-.. automodule:: cobbler.actions.buildiso
    :members:
    :undoc-members:
    :show-inheritance:
@@ -36,6 +36,14 @@ cobbler.actions.hardlink module
    :undoc-members:
    :show-inheritance:
 
+cobbler.actions.importer module
+-------------------------------
+
+.. automodule:: cobbler.actions.importer
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 cobbler.actions.log module
 --------------------------
 
@@ -44,18 +52,18 @@ cobbler.actions.log module
    :undoc-members:
    :show-inheritance:
 
-cobbler.actions.replicate module
+cobbler.actions.mkloaders module
 --------------------------------
 
-.. automodule:: cobbler.actions.replicate
+.. automodule:: cobbler.actions.mkloaders
    :members:
    :undoc-members:
    :show-inheritance:
 
-cobbler.actions.report module
------------------------------
+cobbler.actions.replicate module
+--------------------------------
 
-.. automodule:: cobbler.actions.report
+.. automodule:: cobbler.actions.replicate
    :members:
    :undoc-members:
    :show-inheritance:

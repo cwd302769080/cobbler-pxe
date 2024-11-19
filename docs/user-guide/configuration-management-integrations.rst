@@ -17,9 +17,13 @@ and introduce a CMS onto your client systems.
 
 One option is cobbler's own lightweight CMS. For that, see the document `Built-In Configuration Management`_.
 
-Here we discuss the other option: deploying a CMS such as `cfengine3 <http://cfengine.com/>`_,
-`puppet <http://puppetlabs.com/>`_, `bcfg2 <http://bcfg2.org>`_, `Chef <http://wiki.opscode.com/display/chef/Home>`_,
-etc.
+Here we discuss the other option: deploying a CMS such as
+
+* `cfengine3 <https://cfengine.com/>`_,
+* `puppet <https://puppet.com/>`_,
+* `bcfg2 <http://bcfg2.org>`_,
+* `Chef <https://www.chef.io/products/chef-infrastructure-management>`_,
+* etc.
 
 Cobbler doesn't force you to chose a particular CMS (or to use one at all), though it helps if you do some things to
 link cobbler's profiles with the "profiles" of the CMS. This, in general, makes management of both a lot easier.
@@ -90,7 +94,7 @@ Set up Cobbler to include a package repository that contains your chosen CMS:
 
 Then (illustrating a Red Hat/Puppet combination) set up the kickstart file to say something like:
 
-.. code::
+.. code-block:: text
 
     %packages
     puppet
@@ -110,8 +114,7 @@ Built-In Configuration Management
 Cobbler is not just an installation server, it can also enable two different types of ongoing configuration management
 system (CMS):
 
-* integration with an established external CMS such as `cfengine3 <http://cfengine.com/>`_, `bcfg2 <http://bcfg2.org>`_,
-  `Chef <http://wiki.opscode.com/display/chef/Home>`_, or `puppet <http://puppetlabs.com/>`_.
+* integration with an established external CMS such as cfengine3, bcfg2, Chef, or puppet.
 * its own, much simpler, lighter-weight, internal CMS, discussed here.
 
 Setting up
@@ -120,7 +123,7 @@ Setting up
 Cobbler's internal CMS is focused around packages and templated configuration files, and installing these on client
 systems.
 
-This all works using the same `Cheetah-powered <http://cheetahtemplate.org>`_ templating engine used in
+This all works using the same `Cheetah-powered <https://cheetahtemplate.org>`_ templating engine used in
 kickstart templating, so once you learn about the power of treating your distribution answer
 files as templates, you can use the same templating to drive your CMS configuration files.
 
@@ -270,23 +273,23 @@ For more documentation on Puppet's external nodes feature, see https://docs.pupp
 
 Cobbler provides one, so configure puppet to use ``/usr/bin/cobbler-ext-nodes``:
 
-.. code::
+.. code-block:: ini
 
-    [main]
-    external_nodes = /usr/bin/cobbler-ext-nodes
+   [main]
+   external_nodes = /usr/bin/cobbler-ext-nodes
 
 Note: if you are using puppet 0.24 or later then you will want to also add the following to your configuration file.
 
-.. code::
+.. code-block:: ini
 
-    node_terminus = exec
+   ode_terminus = exec
 
 You may wonder what this does. This is just a very simple script that grabs the data at the following URL, which is a
 URL that always returns a YAML document in the way that Puppet expects it to be returned. This file contains all the
 parameters and classes that are to be assigned to the node in question. The magic URL being visited is powered by
 Cobbler.
 
-.. code::
+.. code-block:: text
 
     http://cobbler/cblr/svc/op/puppet/hostname/foo
 
@@ -294,16 +297,16 @@ Cobbler.
 
 And this will return data such as:
 
-.. code::
+.. code-block:: yaml
 
-    ---
-    classes:
-        - distro1
-        - webserver
-        - likes_llamas
-        - orange
-    parameters:
-        tree: 'http://.../x86_64/tree'
+   ---
+   classes:
+       - distro1
+       - webserver
+       - likes_llamas
+       - orange
+   parameters:
+       tree: 'http://.../x86_64/tree'
 
 Where do the parameters come from? Everything that cobbler tracks in ``--ks-meta`` is also a parameter. This way you can
 easily add parameters as easily as you can add classes, and keep things all organized in one place.
@@ -311,16 +314,16 @@ easily add parameters as easily as you can add classes, and keep things all orga
 What if you have global parameters or classes to add? No problem. You can also add more classes by editing the following
 fields in ``/etc/cobbler/settings.yaml``:
 
-.. code::
+.. code-block:: yaml
 
-    # cobbler has a feature that allows for integration with config management
-    # systems such as Puppet.  The following parameters work in conjunction with
+   # cobbler has a feature that allows for integration with config management
+   # systems such as Puppet.  The following parameters work in conjunction with
 
-    # --mgmt-classes  and are described in furhter detail at:
-    # https://fedorahosted.org/cobbler/wiki/UsingCobblerWithConfigManagementSystem
-    mgmt_classes: []
-    mgmt_parameters:
-       from_cobbler: 1
+   # --mgmt-classes  and are described in furhter detail at:
+   # https://fedorahosted.org/cobbler/wiki/UsingCobblerWithConfigManagementSystem
+   mgmt_classes: []
+   mgmt_parameters:
+      from_cobbler: 1
 
 Alternate External Nodes Script
 ===============================
@@ -330,14 +333,14 @@ repository (at ``/etc/puppet/manifests/``) and networking information from cobbl
 the puppet side, and then looks for ``/etc/puppet/external_node.yaml`` for cobbler side configuration.
 The configuration is as follows.
 
-.. code::
+.. code-block:: yaml
 
-    base: /etc/puppet/manifests/nodes
-    cobbler: <%= cobbler_host %>
-    no_yaml: puppet::noyaml
-    no_cobbler: network::nocobbler
-    bad_yaml: puppet::badyaml
-    unmanaged: network::unmanaged
+   base: /etc/puppet/manifests/nodes
+   cobbler: <%= cobbler_host %>
+   no_yaml: puppet::noyaml
+   no_cobbler: network::nocobbler
+   bad_yaml: puppet::badyaml
+   unmanaged: network::unmanaged
 
 The output for network information will be in the form of a pseudo data structure that allows puppet to split it apart
 and create the network interfaces on the node being managed.
@@ -352,13 +355,13 @@ bcfg2 support
 
 Documentation to be added
 
-Chef
-####
+Chef support
+############
 
 Documentation to be added.
 
 There is some integration information on bootstrapping chef clients with cobbler in
-[this blog article](http://blog.milford.io/2012/03/getting-a-basic-cobbler-server-going-on-centos/)
+`this blog article <https://web.archive.org/web/20140213051741/http://blog.milford.io/2012/03/getting-a-basic-cobbler-server-going-on-centos/>`_
 
 Conclusion
 ##########
@@ -366,10 +369,3 @@ Conclusion
 Hopefully this should get you started in linking up your provisioning configuration with your CMS implementation. The
 examples provided are for Puppet, but we can (in the future) presumably extend ``--mgmt-classes`` to work with other
 tools... Just let us know what you are interested in, or perhaps take a shot at creating a patch for it.
-
-Attachments
-###########
-
--   [puppet\_node.py](/cobbler/attachment/wiki/UsingCobblerWithConfigManagementSystem/puppet_node.py)
-    (2.5 kB) -Alternate External Nodes Script, added by shenson on
-    12/09/10 20:33:36.

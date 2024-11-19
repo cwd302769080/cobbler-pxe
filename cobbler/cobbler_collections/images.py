@@ -1,23 +1,23 @@
 """
-Copyright 2006-2009, Red Hat, Inc and Others
-Michael DeHaan <michael.dehaan AT gmail>
-
-This software may be freely redistributed under the terms of the GNU
-general public license.
-
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
-02110-1301  USA.
+Cobbler module that at runtime holds all images in Cobbler.
 """
 
-from cobbler.cobbler_collections import collection
-from cobbler.items import image as image
+# SPDX-License-Identifier: GPL-2.0-or-later
+# SPDX-FileCopyrightText: Copyright 2006-2009, Red Hat, Inc and Others
+# SPDX-FileCopyrightText: Michael DeHaan <michael.dehaan AT gmail>
+
+from typing import TYPE_CHECKING, Any, Dict
+
 from cobbler import utils
 from cobbler.cexceptions import CX
+from cobbler.cobbler_collections import collection
+from cobbler.items import image
+
+if TYPE_CHECKING:
+    from cobbler.api import CobblerAPI
 
 
-class Images(collection.Collection):
+class Images(collection.Collection[image.Image]):
     """
     A image instance represents a ISO or virt image we want to track
     and repeatedly install.  It differs from a answer-file based installation.
@@ -31,43 +31,49 @@ class Images(collection.Collection):
     def collection_types() -> str:
         return "images"
 
-    def factory_produce(self, api, item_dict):
+    def factory_produce(self, api: "CobblerAPI", seed_data: Dict[str, Any]):
         """
-        Return a Distro forged from item_dict
+        Return a Distro forged from seed_data
+
+        :param api: Parameter is skipped.
+        :param seed_data: Data to seed the object with.
+        :returns: The created object.
         """
-        new_image = image.Image(api)
-        new_image.from_dict(item_dict)
-        return new_image
+        return image.Image(self.api, **seed_data)
 
     def remove(
         self,
-        name,
+        name: str,
         with_delete: bool = True,
         with_sync: bool = True,
         with_triggers: bool = True,
         recursive: bool = True,
-    ):
+    ) -> None:
         """
         Remove element named 'name' from the collection
 
         :raises CX: In case object does not exist or it would orhan a system.
         """
         # NOTE: with_delete isn't currently meaningful for repos but is left in for consistency in the API. Unused.
-        name = name.lower()
-        obj = self.find(name=name)
+        obj = self.listing.get(name, None)
+
         if obj is None:
-            raise CX("cannot delete an object that does not exist: %s" % name)
+            raise CX(f"cannot delete an object that does not exist: {name}")
 
         # first see if any Groups use this distro
         if not recursive:
-            for v in self.api.systems():
-                if v.image is not None and v.image.lower() == name:
-                    raise CX("removal would orphan system: %s" % v.name)
+            for system in self.api.systems():
+                if system.image == name:
+                    raise CX(f"removal would orphan system: {system.name}")
 
         if recursive:
-            kids = obj.get_children()
+            kids = self.api.find_system(return_list=True, image=obj.name)
+            if kids is None:
+                kids = []
+            if not isinstance(kids, list):
+                raise ValueError("Expected list or None from find_items!")
             for k in kids:
-                self.api.remove_system(k, recursive=True)
+                self.api.remove_system(k, recursive=True, with_sync=with_sync)
 
         if with_delete:
             if with_triggers:
@@ -76,13 +82,11 @@ class Images(collection.Collection):
                 )
             if with_sync:
                 lite_sync = self.api.get_sync()
-                lite_sync.remove_single_image(name)
+                lite_sync.remove_single_image(obj)
 
-        self.lock.acquire()
-        try:
+        with self.lock:
+            self.remove_from_indexes(obj)
             del self.listing[name]
-        finally:
-            self.lock.release()
         self.collection_mgr.serialize_delete(self, obj)
 
         if with_delete:

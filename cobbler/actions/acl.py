@@ -3,33 +3,27 @@ Configures acls for various users/groups so they can access the Cobbler command
 line as non-root.  Now that CLI is largely remoted (XMLRPC) this is largely just
 useful for not having to log in (access to shared-secret) file but also grants
 access to hand-edit various cobbler_collections files and other useful things.
-
-Copyright 2006-2009, Red Hat, Inc and Others
-Michael DeHaan <michael.dehaan AT gmail>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
-02110-1301  USA
 """
-from typing import Optional
+
+# SPDX-License-Identifier: GPL-2.0-or-later
+# SPDX-FileCopyrightText: Copyright 2006-2009, Red Hat, Inc and Others
+# SPDX-FileCopyrightText: Michael DeHaan <michael.dehaan AT gmail>
+
+from typing import TYPE_CHECKING, Optional
 
 from cobbler import utils
 from cobbler.cexceptions import CX
 
+if TYPE_CHECKING:
+    from cobbler.api import CobblerAPI
+
 
 class AclConfig:
-    def __init__(self, api):
+    """
+    TODO
+    """
+
+    def __init__(self, api: "CobblerAPI") -> None:
         """
         Constructor
 
@@ -44,7 +38,7 @@ class AclConfig:
         addgroup: Optional[str] = None,
         removeuser: Optional[str] = None,
         removegroup: Optional[str] = None,
-    ):
+    ) -> None:
         """
         Automate setfacl commands. Only one of the four may be specified but one option also must be specified.
 
@@ -55,23 +49,23 @@ class AclConfig:
         :raises CX: Raised in case not enough arguments are specified.
         """
 
-        ok = False
+        args_ok = False
         if adduser:
-            ok = True
+            args_ok = True
             self.modacl(True, True, adduser)
         if addgroup:
-            ok = True
+            args_ok = True
             self.modacl(True, False, addgroup)
         if removeuser:
-            ok = True
+            args_ok = True
             self.modacl(False, True, removeuser)
         if removegroup:
-            ok = True
+            args_ok = True
             self.modacl(False, False, removegroup)
-        if not ok:
+        if not args_ok:
             raise CX("no arguments specified, nothing to do")
 
-    def modacl(self, isadd: bool, isuser: bool, who: str):
+    def modacl(self, isadd: bool, isuser: bool, who: str) -> None:
         """
         Modify the acls for Cobbler on the filesystem.
 
@@ -82,7 +76,7 @@ class AclConfig:
         snipdir = self.settings.autoinstall_snippets_dir
         tftpboot = self.settings.tftpboot_location
 
-        PROCESS_DIRS = {
+        process_dirs = {
             "/var/log/cobbler": "rwx",
             "/var/log/cobbler/tasks": "rwx",
             "/var/lib/cobbler": "rwx",
@@ -91,31 +85,27 @@ class AclConfig:
             "/var/lib/cobbler/triggers": "rwx",
         }
         if not snipdir.startswith("/var/lib/cobbler/"):
-            PROCESS_DIRS[snipdir] = "r"
+            process_dirs[snipdir] = "r"
 
-        cmd = "-R"
-
-        if isadd:
-            cmd = "%s -m" % cmd
-        else:
-            cmd = "%s -x" % cmd
-
-        if isuser:
-            cmd = "%s u:%s" % (cmd, who)
-        else:
-            cmd = "%s g:%s" % (cmd, who)
-
-        for d in PROCESS_DIRS:
-            how = PROCESS_DIRS[d]
+        for directory, how in process_dirs.items():
+            cmd = [
+                "setfacl",
+                "-d",
+                "-R",
+                "-m" if isadd else "-x",
+                f"u:{who}" if isuser else f"g:{who}",
+                directory,
+            ]
             if isadd:
-                cmd2 = "%s:%s" % (cmd, how)
-            else:
-                cmd2 = cmd
+                cmd[4] = f"{cmd[4]}:{how}"
 
-            cmd2 = "%s %s" % (cmd2, d)
-            rc = utils.subprocess_call("setfacl -d %s" % cmd2, shell=True)
-            if not rc == 0:
-                utils.die("command failed")
-            rc = utils.subprocess_call("setfacl %s" % cmd2, shell=True)
-            if not rc == 0:
-                utils.die("command failed")
+            # We must pass in a copy of list because in case the call is async we
+            # would modify the call that maybe has not been done. We don't do this
+            # yet but let's be sure. Also, the tests would break if we don't pass a copy.
+            setfacl_reset_return_code = utils.subprocess_call(cmd.copy(), shell=False)
+            if setfacl_reset_return_code != 0:
+                utils.die(f'"setfacl" command failed for "{directory}"')
+            cmd.pop(1)
+            setfacl_return_code = utils.subprocess_call(cmd.copy(), shell=False)
+            if setfacl_return_code != 0:
+                utils.die(f'"setfacl" command failed for "{directory}"')

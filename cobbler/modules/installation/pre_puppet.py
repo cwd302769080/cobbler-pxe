@@ -4,12 +4,18 @@ reinstalling a machine if the puppet master is running on the Cobbler
 server.
 
 Based on:
-http://www.ithiriel.com/content/2010/03/29/writing-install-triggers-cobbler
+https://www.ithiriel.com/content/2010/03/29/writing-install-triggers-cobbler
 """
+
 import logging
 import re
+from typing import TYPE_CHECKING, List
 
-import cobbler.utils as utils
+from cobbler import utils
+
+if TYPE_CHECKING:
+    from cobbler.api import CobblerAPI
+
 
 logger = logging.getLogger()
 
@@ -25,7 +31,7 @@ def register() -> str:
     return "/var/lib/cobbler/triggers/install/pre/*"
 
 
-def run(api, args) -> int:
+def run(api: "CobblerAPI", args: List[str]) -> int:
     """
     This method runs the trigger, meaning in this case that old puppet certs are automatically removed via puppetca.
 
@@ -52,27 +58,29 @@ def run(api, args) -> int:
         return 0
 
     system = api.find_system(name)
-    system = utils.blender(api, False, system)
-    hostname = system["hostname"]
+    if system is None or isinstance(system, list):
+        raise ValueError("Ambigous search match detected!")
+    blended_system = utils.blender(api, False, system)
+    hostname = blended_system["hostname"]
     if not re.match(r"[\w-]+\..+", hostname):
-        search_domains = system["name_servers_search"]
+        search_domains = blended_system["name_servers_search"]
         if search_domains:
             hostname += "." + search_domains[0]
     if not re.match(r"[\w-]+\..+", hostname):
-        default_search_domains = system["default_name_servers_search"]
+        default_search_domains = blended_system["default_name_servers_search"]
         if default_search_domains:
             hostname += "." + default_search_domains[0]
     puppetca_path = settings.puppetca_path
     cmd = [puppetca_path, "cert", "clean", hostname]
 
-    rc = 0
+    return_code = 0
 
     try:
-        rc = utils.subprocess_call(cmd, shell=False)
-    except:
+        return_code = utils.subprocess_call(cmd, shell=False)
+    except Exception:
         logger.warning("failed to execute %s", puppetca_path)
 
-    if rc != 0:
+    if return_code != 0:
         logger.warning("puppet cert removal for %s failed", name)
 
     return 0

@@ -3,7 +3,7 @@ Install Guide
 ***********************************
 
 Setting up and running `cobblerd` is not a easy task. Knowledge in Apache2 configuration (setting up SSL, virtual hosts,
-apache module and wsgi) is needed. Certificates and some server administration knowledge is required too.
+and apache proxy module) is needed. Certificates and some server administration knowledge is required too.
 
 Cobbler is available for installation in several different ways, through packaging systems for each distribution or
 directly from source.
@@ -17,7 +17,7 @@ Known packages by distros
 This is the most convenient way and should be the default for most people. Production usage is advised only from these
 four sources or from source with Git Tags.
 
-- `Fedora 34 <https://src.fedoraproject.org/rpms/cobbler>`_ - ``dnf install cobbler``
+- `Fedora 37 <https://src.fedoraproject.org/rpms/cobbler>`_ - ``dnf install cobbler``
 - `CentOS 8 <https://src.fedoraproject.org/rpms/cobbler>`_:
     - ``dnf install epel-release``
     - ``dnf module enable cobbler``
@@ -33,33 +33,48 @@ Packages
 ========
 
 Please note that installing any of the packages here via a package manager (such as dnf/yum or apt) can and will require
-a large number of ancilary packages, which we do not document here. The package definition should automatically pull
+a large number of ancillary packages, which we do not document here. The package definition should automatically pull
 these packages in and install them along with Cobbler, however it is always best to verify these requirements have been
 met prior to installing Cobbler or any of its components.
 
 First and foremost, Cobbler requires Python. Since 3.0.0 you will need Python 3. Cobbler also requires the installation
 of the following packages:
 
+- A webserver that can act as a proxy (like Apache, Nginx, ...)
+- wget and/or curl
 - createrepo_c
-- httpd / apache2
 - xorriso
-- mod_wsgi / libapache2-mod-wsgi
-- mod_ssl / libapache2-mod-ssl
+- Gunicorn
 - python-cheetah
+- python-dns
+- python-requests
+- python-distro
 - python-netaddr
 - python-librepo
 - python-schema
+- python-gunicorn
 - PyYAML / python-yaml
+- fence-agents
 - rsync
 - syslinux
 - tftp-server / atftpd
-- dnf-plugins-core
+
+On dnf based systems please also install: ``dnf-plugins-core``
 
 If you decide to use the LDAP authentication, please also install manually in any case:
 
 - python3-ldap (or via PyPi: ldap)
 
-Koan can be installed apart from Cobbler. Please visit the `Koan documentation <https://koan.readthedocs.io/en/latest/>`_ for details.
+If you decide to require Windows auto-installation support, please also install manually:
+
+- python-hivex
+- python-pefile
+
+If you are on an apt-based system our operation may be better for mirror detection if the ``aptsources`` Python module
+is available.
+
+Koan can be installed apart from Cobbler. Please visit the
+`Koan documentation <https://koan.readthedocs.io/en/latest/>`_ for details.
 
 .. note::
    Not installing all required dependencies will lead to stacktraces in your Cobbler installation.
@@ -80,12 +95,9 @@ Installation from source requires the following additional software:
 - git
 - make
 - python3-devel (on Debian based distributions ``python3-dev``)
-- python3-Cheetah3
 - python3-Sphinx
 - python3-coverage
 - openssl
-- apache2-devel (and thus apache2)
-- A TFTP server
 
 
 Installation
@@ -100,10 +112,13 @@ Packages
 We leave packaging to downstream; this means you have to check the repositories provided by your distribution vendor.
 However we provide docker files for
 
-- Fedora 34
-- CentOS 8
+- Fedora 37
+- openSUSE Leap 15.3
+- openSUSE Tumbleweed
+- Rocky Linux 8
 - Debian 10 Buster
 - Debian 11 Bullseye
+- Debian 12 Bookworm
 
 which will give you packages which will work better then building from source yourself.
 
@@ -112,10 +127,11 @@ which will give you packages which will work better then building from source yo
 
 To build the packages you to need to execute the following in the root folder of the cloned repository:
 
-- Fedora 34: ``./docker/rpms/build-and-install-rpms.sh fc34 docker/rpms/Fedora_34/Fedora34.dockerfile``
+- Fedora 37: ``./docker/rpms/build-and-install-rpms.sh fc37 docker/rpms/Fedora_37/Fedora37.dockerfile``
 - CentOS 8: ``./docker/rpms/build-and-install-rpms.sh el8 docker/rpms/CentOS_8/CentOS8.dockerfile``
 - Debian 10: ``./docker/debs/build-and-install-debs.sh deb10 docker/debs/Debian_10/Debian10.dockerfile``
 - Debian 11: ``./docker/debs/build-and-install-debs.sh deb11 docker/debs/Debian_11/Debian11.dockerfile``
+- Debian 12: ``./docker/debs/build-and-install-debs.sh deb12 docker/debs/Debian_12/Debian12.dockerfile``
 
 After executing the scripts you should have one folder owned by ``root`` which was created during the build. It is
 either called ``rpm-build`` or ``deb-build``. In these directories you should find the built packages. They are
@@ -186,8 +202,8 @@ Source
 ######
 
 .. warning:: Cobbler is not suited to be run outside of custom paths or being installed into a virtual environment. We
-             are working hard to get there but it is not possible yet. If you try this and it works, please report to our
-             GitHub repository and tell us what is left to support this conveniently.
+             are working hard to get there but it is not possible yet. If you try this and it works, please report to
+             our GitHub repository and tell us what is left to support this conveniently.
 
 
 Installation
@@ -200,8 +216,8 @@ The latest source code is available through git:
     $ git clone https://github.com/cobbler/cobbler.git
     $ cd cobbler
 
-The release30 branch corresponds to the official release version for the 3.0.x series. The master branch is the
-development series, and always uses an odd number for the minor version (for example, 3.1.0).
+The release30 branch corresponds to the official release version for the 3.0.x series. The main branch is the
+development series.
 
 When building from source, make sure you have the correct prerequisites. The Makefile uses a script called
 `distro_build_configs.sh` which sets the correct environment variables. Be sure to source it if you do not use the
@@ -225,11 +241,14 @@ To preserve your existing configuration files, snippets and automatic installati
 To install Cobbler, finish the installation in any of both cases, use these steps:
 
 #. Copy the systemd service file for `cobblerd` from ``/etc/cobbler/cobblerd.service`` to your systemd unit directory
-   (``/etc/systemd/system``) and adjust ``ExecStart`` from ``/usr/bin/cobblerd`` to ``/usr/local/bin/cobblerd``.
-#. Install ``apache2-mod_wsgi-python3`` or the package responsible for your distro. (On Debian:
-   ``libapache2-mod-wsgi-py3``)
+   (``/etc/systemd/system``).
+#. Install ``python3-gunicorn`` or the package responsible for your distro.
+#. Take the systemd service file ``cobblerd-gunicorn-service`` and copy it into your unit directory.
 #. Enable the proxy module of Apache2 (``a2enmod proxy`` or something similar) if not enabled.
-#. Restart Apache and ``cobblerd``.
+#. Restart Apache, ``cobblerd`` and ``cobblerd-gunicorn``.
+
+.. note:: Depending on your distributions FHS implementation you might need to adjust ``ExecStart`` from
+          ``/usr/bin/cobblerd`` to ``/usr/local/bin/cobblerd`` in the ``cobblerd.service`` file.
 
 Be advised that we don't copy the service file into the correct directory and that the path to the binary may be wrong
 depending on the location of the binary on your system. Do this manually and then you should be good to go. The same is

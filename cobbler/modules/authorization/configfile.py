@@ -4,15 +4,19 @@ Authorization module that allow users listed in
 For instance, when using authz_ldap, you want to use authn_configfile,
 not authz_allowall, which will most likely NOT do what you want.
 """
+
 # SPDX-License-Identifier: GPL-2.0-or-later
 # SPDX-FileCopyrightText: Copyright 2007-2009, Red Hat, Inc and Others
 # SPDX-FileCopyrightText: Michael DeHaan <michael.dehaan AT gmail>
 
 
-from configparser import SafeConfigParser
-
 import os
-from typing import Dict
+from configparser import ConfigParser
+from typing import TYPE_CHECKING, Any, Dict
+
+if TYPE_CHECKING:
+    from cobbler.api import CobblerAPI
+
 
 CONFIG_FILE = "/etc/cobbler/users.conf"
 
@@ -26,7 +30,7 @@ def register() -> str:
     return "authz"
 
 
-def __parse_config() -> Dict[str, dict]:
+def __parse_config() -> Dict[str, Dict[Any, Any]]:
     """
     Parse the the users.conf file.
 
@@ -34,19 +38,25 @@ def __parse_config() -> Dict[str, dict]:
     """
     if not os.path.exists(CONFIG_FILE):
         return {}
-    config = SafeConfigParser()
+    config = ConfigParser()
     config.read(CONFIG_FILE)
-    alldata = {}
+    alldata: Dict[str, Dict[str, Any]] = {}
     groups = config.sections()
-    for g in groups:
-        alldata[str(g)] = {}
-        opts = config.options(g)
-        for o in opts:
-            alldata[g][o] = 1
+    for group in groups:
+        alldata[str(group)] = {}
+        options = config.options(group)
+        for option in options:
+            alldata[group][option] = 1
     return alldata
 
 
-def authorize(api_handle, user: str, resource: str, arg1=None, arg2=None) -> int:
+def authorize(
+    api_handle: "CobblerAPI",
+    user: str,
+    resource: str,
+    arg1: Any = None,
+    arg2: Any = None,
+) -> int:
     """
     Validate a user against a resource. All users in the file are permitted by this module.
 
@@ -60,7 +70,7 @@ def authorize(api_handle, user: str, resource: str, arg1=None, arg2=None) -> int
     # FIXME: this must be modified to use the new ACL engine
 
     data = __parse_config()
-    for g in data:
-        if user.lower() in data[g]:
+    for _, group_data in data.items():
+        if user.lower() in group_data:
             return 1
     return 0

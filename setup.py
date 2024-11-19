@@ -1,27 +1,33 @@
 #!/usr/bin/env python3
 
-import os
-import sys
-import time
-import glob as _glob
-
-from setuptools import setup
-from setuptools import Command
-from setuptools.command.install import install as _install
-from setuptools import Distribution as _Distribution
-from setuptools.command.build_py import build_py as _build_py
-from setuptools import dep_util
-from distutils.command.build import build as _build
-from configparser import ConfigParser
-from setuptools import find_packages
-from sphinx.setup_command import BuildDoc
+"""
+Setup module for Cobbler
+"""
 
 import codecs
-from coverage import Coverage
+import glob as _glob
+import os
 import pwd
 import shutil
 import subprocess
+import sys
+import time
+from configparser import ConfigParser
+from distutils.command.build import build as _build
+from typing import Any, Dict, List
 
+from setuptools import Command
+from setuptools import Distribution as _Distribution
+from setuptools import find_packages, setup
+from setuptools.command.build_py import build_py as _build_py
+from setuptools.command.install import install as _install
+
+try:
+    # Setuptools compatibility 70+
+    # https://github.com/cobbler/cobbler/issues/3692
+    from setuptools import modified
+except ImportError:
+    from setuptools import dep_util as modified  # type: ignore
 
 VERSION = "3.4.0"
 OUTPUT_DIR = "config"
@@ -44,6 +50,8 @@ tftproot = os.environ.get("TFTPROOT", "/srv/tftpboot")
 bind_zonefiles = os.environ.get("ZONEFILES", "/var/lib/named/")
 shim_folder = os.environ.get("SHIM_FOLDER", "/usr/share/efi/*/")
 shim_file = os.environ.get("SHIM_FILE", r"shim\.efi")
+secure_boot_folder = os.environ.get("SECURE_BOOT_FOLDER", "/usr/share/efi/*/")
+secure_boot_file = os.environ.get("SECURE_BOOT_FILE", r"grub\.efi")
 ipxe_folder = os.environ.get("IPXE_FOLDER", "/usr/share/ipxe/")
 memdisk_folder = os.environ.get("MEMDISK_FOLDER", "/usr/share/syslinux")
 pxelinux_folder = os.environ.get("PXELINUX_FOLDER", "/usr/share/syslinux")
@@ -56,9 +64,9 @@ grub_mod_folder = os.environ.get("GRUB_MOD_FOLDER", "/usr/share/grub2")
 #####################################################################
 
 
-def glob(*args, **kwargs):
+def glob(*args: str, **kwargs: Any) -> List[str]:
     recursive = kwargs.get("recursive", False)
-    results = []
+    results: List[str] = []
     for arg in args:
         for elem in _glob.glob(arg):
             # Now check if we should handle/check those results.
@@ -82,8 +90,10 @@ def glob(*args, **kwargs):
     return results
 
 
-def read_readme_file():
-    # read the contents of your README file
+def read_readme_file() -> str:
+    """
+    read the contents of your README file
+    """
     this_directory = os.path.abspath(os.path.dirname(__file__))
     with open(os.path.join(this_directory, "README.md"), encoding="utf-8") as f:
         return f.read()
@@ -112,7 +122,9 @@ def gen_build_version():
         if cmd.returncode == 0:
             gitstamp, gitdate = data.decode("utf8").split("\n")
 
-    with open(os.path.join(OUTPUT_DIR, "version"), "w+") as version_file:
+    with open(
+        os.path.join(OUTPUT_DIR, "version"), "w", encoding="UTF-8"
+    ) as version_file:
         config = ConfigParser()
         config.add_section("cobbler")
         config.set("cobbler", "gitdate", str(gitdate))
@@ -131,7 +143,7 @@ def gen_build_version():
 
 
 class Distribution(_Distribution):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any):
         self.configure_files = []
         self.configure_values = {}
         self.man_pages = []
@@ -143,7 +155,7 @@ class Distribution(_Distribution):
 #####################################################################
 
 
-class build_py(_build_py):
+class BuildPy(_build_py):
     """Specialized Python source builder."""
 
     def run(self):
@@ -156,7 +168,7 @@ class build_py(_build_py):
 #####################################################################
 
 
-class build(_build):
+class Build(_build):
     """Specialized Python source builder."""
 
     def run(self):
@@ -164,22 +176,14 @@ class build(_build):
 
 
 #####################################################################
-# # Build man pages using Sphinx  ###################################
-#####################################################################
-
-
-class build_man(BuildDoc):
-    def initialize_options(self):
-        BuildDoc.initialize_options(self)
-        self.builder = "man"
-
-
-#####################################################################
 # # Configure files ##################################################
 #####################################################################
 
 
-class build_cfg(Command):
+class BuildCfg(Command):
+    """
+    TODO
+    """
 
     description = "configure files (copy and substitute options)"
 
@@ -215,6 +219,9 @@ class build_cfg(Command):
     boolean_options = ["force"]
 
     def initialize_options(self):
+        """
+        TODO
+        """
         self.build_dir = None
         self.force = None
         self.install_base = None
@@ -228,6 +235,9 @@ class build_cfg(Command):
         self.root = None
 
     def finalize_options(self):
+        """
+        TODO
+        """
         self.set_undefined_options(
             "build", ("build_base", "build_dir"), ("force", "force")
         )
@@ -259,38 +269,44 @@ class build_cfg(Command):
             virtualenv = ""
 
         # The values to expand.
-        self.configure_values = {
+        self.configure_values = {  # type: ignore
             "python_executable": sys.executable,
             "virtualenv": virtualenv,
-            "install_base": os.path.normpath(self.install_base),
-            "install_platbase": os.path.normpath(self.install_platbase),
-            "install_scripts": os.path.normpath(self.install_scripts),
-            "install_data": os.path.normpath(self.install_data),
-            "install_purelib": os.path.normpath(self.install_purelib),
-            "install_platlib": os.path.normpath(self.install_platlib),
-            "install_lib": os.path.normpath(self.install_lib),
-            "install_headers": os.path.normpath(self.install_headers),
+            "install_base": os.path.normpath(self.install_base),  # type: ignore
+            "install_platbase": os.path.normpath(self.install_platbase),  # type: ignore
+            "install_scripts": os.path.normpath(self.install_scripts),  # type: ignore
+            "install_data": os.path.normpath(self.install_data),  # type: ignore
+            "install_purelib": os.path.normpath(self.install_purelib),  # type: ignore
+            "install_platlib": os.path.normpath(self.install_platlib),  # type: ignore
+            "install_lib": os.path.normpath(self.install_lib),  # type: ignore
+            "install_headers": os.path.normpath(self.install_headers),  # type: ignore
         }
-        self.configure_values.update(self.distribution.configure_values)
+        self.configure_values.update(self.distribution.configure_values)  # type: ignore
 
     def run(self):
+        """
+        TODO
+        """
         # On dry-run ignore missing source files.
-        if self.dry_run:
+        if self.dry_run:  # type: ignore
             mode = "newer"
         else:
             mode = "error"
         # Work on all files
-        for infile in self.distribution.configure_files:
+        for infile in self.distribution.configure_files:  # type: ignore
             # We copy the files to build/
-            outfile = os.path.join(self.build_dir, infile)
+            outfile = os.path.join(self.build_dir, infile)  # type: ignore
             # check if the file is out of date
-            if self.force or dep_util.newer_group([infile, "setup.py"], outfile, mode):
+            if self.force or modified.newer_group([infile, "setup.py"], outfile, mode):  # type: ignore
                 # It is. Configure it
-                self.configure_one_file(infile, outfile)
+                self.configure_one_file(infile, outfile)  # type: ignore
 
-    def configure_one_file(self, infile, outfile):
+    def configure_one_file(self, infile: str, outfile: str):
+        """
+        TODO
+        """
         self.announce("configuring %s" % infile, 3)
-        if not self.dry_run:
+        if not self.dry_run:  # type: ignore
             # Read the file
             with codecs.open(infile, "r", "utf-8") as fh:
                 before = fh.read()
@@ -301,30 +317,26 @@ class build_cfg(Command):
                 os.makedirs(outdir)
             # Write it into build/
             with codecs.open(outfile, "w", "utf-8") as fh:
-                fh.write(self.substitute_values(before, self.configure_values))
+                fh.write(self.substitute_values(before, self.configure_values))  # type: ignore
             # The last step is to copy the permission bits
             shutil.copymode(infile, outfile)
 
-    def substitute_values(self, string, values):
+    def substitute_values(self, string: str, values: Dict[str, Any]) -> str:
+        """
+        TODO
+        """
         for name, val in list(values.items()):
             # print("replacing @@%s@@ with %s" % (name, val))
-            string = string.replace("@@%s@@" % (name), val)
+            string = string.replace(f"@@{name}@@", val)
         return string
 
 
-def has_configure_files(build):
+def has_configure_files(build: Build):
     """Check if the distribution has configuration files to work on."""
-    return bool(build.distribution.configure_files)
+    return bool(build.distribution.configure_files)  # type: ignore
 
 
-def has_man_pages(build):
-    """Check if the distribution has configuration files to work on."""
-    return bool(build.distribution.man_pages)
-
-
-build.sub_commands.extend(
-    (("build_man", has_man_pages), ("build_cfg", has_configure_files))
-)
+Build.sub_commands.extend((("build_cfg", has_configure_files),))
 
 
 #####################################################################
@@ -332,20 +344,23 @@ build.sub_commands.extend(
 #####################################################################
 
 
-class install(_install):
+class Install(_install):
     """Specialised python package installer.
 
     It does some required chown calls in addition to the usual stuff.
     """
 
-    def __init__(self, *args):
+    def __init__(self, *args: Any):
         _install.__init__(self, *args)
 
-    def change_owner(self, path, owner):
+    def change_owner(self, path: str, owner: str):
+        """
+        TODO
+        """
         user = pwd.getpwnam(owner)
         try:
             self.announce("changing mode of %s" % path, 3)
-            if not self.dry_run:
+            if not self.dry_run:  # type: ignore
                 # os.walk does not include the toplevel directory
                 os.lchown(path, user.pw_uid, -1)
                 # Now walk the directory and change them all
@@ -354,17 +369,20 @@ class install(_install):
                         os.lchown(os.path.join(root, dirname), user.pw_uid, -1)
                     for filename in files:
                         os.lchown(os.path.join(root, filename), user.pw_uid, -1)
-        except OSError as e:
+        except OSError as os_error:
             # We only check for errno = 1 (EPERM) here because its kinda
             # expected when installing as a non root user.
-            if e.errno == 1:
+            if os_error.errno == 1:
                 self.warn("Could not change owner: You have insufficient permissions.")
             else:
-                raise e
+                raise os_error
 
     def run(self):
+        """
+        TODO
+        """
         # Run the usual stuff.
-        _install.run(self)
+        _install.run(self)  # type: ignore
 
         # If --root wasn't specified default to /usr/local
         if self.root is None:
@@ -376,17 +394,29 @@ class install(_install):
 #####################################################################
 
 
-class test_command(Command):
+class TestCommand(Command):
+    """
+    TODO
+    """
+
     user_options = []
 
     def initialize_options(self):
-        pass
+        """
+        TODO
+        """
 
     def finalize_options(self):
-        pass
+        """
+        TODO
+        """
 
     def run(self):
+        """
+        TODO
+        """
         import pytest
+        from coverage import Coverage  # type: ignore
 
         cov = Coverage()
         cov.erase()
@@ -396,8 +426,8 @@ class test_command(Command):
 
         cov.stop()
         cov.save()
-        cov.html_report(directory="covhtml")
-        sys.exit(int(bool(len(result.failures) > 0 or len(result.errors) > 0)))
+        cov.html_report(directory="covhtml")  # type: ignore
+        sys.exit(int(bool(len(result.failures) > 0 or len(result.errors) > 0)))  # type: ignore
 
 
 #####################################################################
@@ -405,7 +435,10 @@ class test_command(Command):
 #####################################################################
 
 
-class statebase(Command):
+class Statebase(Command):
+    """
+    TODO
+    """
 
     user_options = [
         ("statepath=", None, "directory to backup configuration"),
@@ -413,17 +446,23 @@ class statebase(Command):
     ]
 
     def initialize_options(self):
+        """
+        TODO
+        """
         self.statepath = statepath
         self.root = None
 
     def finalize_options(self):
+        """
+        TODO
+        """
         pass
 
-    def _copy(self, frm, to):
+    def _copy(self, frm: str, to: str):
         if os.path.isdir(frm):
             to = os.path.join(to, os.path.basename(frm))
             self.announce("copying %s/ to %s/" % (frm, to), 3)
-            if not self.dry_run:
+            if not self.dry_run:  # type: ignore
                 if os.path.exists(to):
                     shutil.rmtree(to)
                 shutil.copytree(frm, to)
@@ -431,7 +470,7 @@ class statebase(Command):
             self.announce(
                 "copying %s to %s" % (frm, os.path.join(to, os.path.basename(frm))), 3
             )
-            if not self.dry_run:
+            if not self.dry_run:  # type: ignore
                 shutil.copy2(frm, to)
 
 
@@ -440,11 +479,15 @@ class statebase(Command):
 #####################################################################
 
 
-class restorestate(statebase):
-    def _copy(self, frm, to):
+class Restorestate(Statebase):
+    """
+    TODO
+    """
+
+    def _copy(self, frm: str, to: str):
         if self.root:
             to = self.root + to
-        statebase._copy(self, frm, to)
+        super()._copy(frm, to)
 
     def run(self):
         self.announce("restoring the current configuration from %s" % self.statepath, 3)
@@ -453,7 +496,6 @@ class restorestate(statebase):
             return
         self._copy(os.path.join(self.statepath, "collections"), libpath)
         self._copy(os.path.join(self.statepath, "cobbler.conf"), webconfig)
-        self._copy(os.path.join(self.statepath, "modules.conf"), etcpath)
         self._copy(os.path.join(self.statepath, "settings.yaml"), etcpath)
         self._copy(os.path.join(self.statepath, "users.conf"), etcpath)
         self._copy(os.path.join(self.statepath, "users.digest"), etcpath)
@@ -467,26 +509,27 @@ class restorestate(statebase):
 #####################################################################
 
 
-class savestate(statebase):
-
+class Savestate(Statebase):
     description = "Backup the current configuration to /tmp/cobbler_settings."
 
-    def _copy(self, frm, to):
+    def _copy(self, frm: str, to: str) -> None:
         if self.root:
             frm = self.root + frm
-        statebase._copy(self, frm, to)
+        super()._copy(frm, to)
 
     def run(self):
-        self.announce("backing up the current configuration to %s" % self.statepath, 3)
+        """
+        TODO
+        """
+        self.announce(f"backing up the current configuration to {self.statepath}", 3)
         if os.path.exists(self.statepath):
-            self.announce("deleting existing %s" % self.statepath, 3)
-            if not self.dry_run:
+            self.announce("deleting existing {self.statepath}", 3)
+            if not self.dry_run:  # type: ignore
                 shutil.rmtree(self.statepath)
-        if not self.dry_run:
+        if not self.dry_run:  # type: ignore
             os.makedirs(self.statepath)
         self._copy(os.path.join(libpath, "collections"), self.statepath)
         self._copy(os.path.join(webconfig, "cobbler.conf"), self.statepath)
-        self._copy(os.path.join(etcpath, "modules.conf"), self.statepath)
         self._copy(os.path.join(etcpath, "settings.yaml"), self.statepath)
         self._copy(os.path.join(etcpath, "users.conf"), self.statepath)
         self._copy(os.path.join(etcpath, "users.digest"), self.statepath)
@@ -504,14 +547,13 @@ if __name__ == "__main__":
     setup(
         distclass=Distribution,
         cmdclass={
-            "build": build,
-            "build_py": build_py,
-            "test": test_command,
-            "install": install,
-            "savestate": savestate,
-            "restorestate": restorestate,
-            "build_cfg": build_cfg,
-            "build_man": build_man,
+            "build": Build,  # type: ignore
+            "build_py": BuildPy,
+            "test": TestCommand,
+            "install": Install,
+            "savestate": Savestate,
+            "restorestate": Restorestate,
+            "build_cfg": BuildCfg,
         },
         name="cobbler",
         version=VERSION,
@@ -528,22 +570,61 @@ if __name__ == "__main__":
             "Tracker": "https://github.com/cobbler/cobbler/issues",
         },
         license="GPLv2+",
+        classifiers=[
+            "Development Status :: 5 - Production/Stable",
+            "License :: OSI Approved :: GNU General Public License v2 or later (GPLv2+)",
+            "Programming Language :: Python :: 3.6",
+            "Topic :: System :: Installation/Setup",
+            "Topic :: System :: Systems Administration",
+            "Intended Audience :: System Administrators",
+            "Natural Language :: English",
+            "Operating System :: POSIX :: Linux",
+        ],
+        keywords=["pxe", "autoinstallation", "dhcp", "tftp", "provisioning"],
         install_requires=[
-            "mod_wsgi",
             "requests",
             "pyyaml",
             "netaddr",
             "Cheetah3",
-            "pymongo",
+            "pymongo<4.2",  # Cobbler requires Python 3.6; Version 4.2+ requires Python 3.7
             "distro",
             "python-ldap",
             "dnspython",
             "file-magic",
             "schema",
+            "systemd-python",
+            "gunicorn",
         ],
         extras_require={
-            "lint": ["pyflakes", "pycodestyle"],
-            "test": ["pytest", "pytest-cov", "codecov", "pytest-mock"],
+            "windows": [
+                # "hivex",
+                "pefile"
+            ],
+            "extra": ["psutil"],  # debugging startup performance
+            "lint": [
+                # pyright is not written in Python and has to be installed differently.
+                "pyflakes",
+                "pycodestyle",
+                "pylint",
+                "black==22.3.0",  # See .pre-commit-config.yaml
+                "types-requests",
+                "types-PyYAML",
+                "types-psutil",
+                "types-netaddr",
+                "types-mock",
+                "isort",
+            ],
+            "test": [
+                "pytest>6",
+                "pytest-cov",
+                "coverage",
+                "pytest-mock>3.3.0",
+                "pytest-benchmark",
+            ],
+            "docs": ["sphinx", "sphinx-rtd-theme", "sphinxcontrib-apidoc"],
+            # We require the current version to properly detect duplicate issues
+            # See: https://github.com/twisted/towncrier/releases/tag/22.8.0
+            "changelog": ["towncrier>=22.8.0"],
         },
         packages=find_packages(exclude=["*tests*"]),
         scripts=[
@@ -559,6 +640,8 @@ if __name__ == "__main__":
             "bind_zonefiles": bind_zonefiles,
             "shim_folder": shim_folder,
             "shim_file": shim_file,
+            "secure_grub_folder": secure_boot_folder,
+            "secure_grub_file": secure_boot_file,
             "ipxe_folder": ipxe_folder,
             "memdisk_folder": memdisk_folder,
             "pxelinux_folder": pxelinux_folder,
@@ -567,6 +650,7 @@ if __name__ == "__main__":
         },
         configure_files=[
             "config/apache/cobbler.conf",
+            "config/nginx/cobbler.conf",
             "config/cobbler/settings.yaml",
             "config/service/cobblerd.service",
             "templates/etc/named.template",
@@ -585,12 +669,13 @@ if __name__ == "__main__":
             ("%s" % libpath, ["config/cobbler/distro_signatures.json"]),
             ("share/cobbler/bin", glob("scripts/*")),
             ("%s/loaders" % libpath, []),
-            ("%s/cobbler/misc" % webroot, glob("misc/*")),
+            ("%s/misc" % libpath, glob("misc/*")),
             # Configuration
+            (f"{etcpath}/apache", ["build/config/apache/cobbler.conf"]),
+            (f"{etcpath}/nginx", ["build/config/nginx/cobbler.conf"]),
             (
                 "%s" % etcpath,
                 [
-                    "build/config/apache/cobbler.conf",
                     "build/config/service/cobblerd.service",
                     "build/config/cobbler/settings.yaml",
                 ],
@@ -599,14 +684,13 @@ if __name__ == "__main__":
                 "%s" % etcpath,
                 [
                     "config/cobbler/auth.conf",
-                    "config/cobbler/modules.conf",
-                    "config/cobbler/mongodb.conf",
                     "config/cobbler/users.conf",
                     "config/cobbler/users.digest",
                     "config/cheetah/cheetah_macros",
                     "config/rotate/cobblerd_rotate",
                     "config/rsync/import_rsync_whitelist",
                     "config/rsync/rsync.exclude",
+                    "config/service/cobblerd-gunicorn.service",
                     "config/version",
                 ],
             ),
@@ -634,104 +718,15 @@ if __name__ == "__main__":
             # files
             ("%s/grub_config/grub" % libpath, glob("config/grub/grub/*")),
             # dirs
-            ("%s/boot" % tftproot, []),
-            ("%s/etc" % tftproot, []),
-            ("%s/grub" % tftproot, []),
-            ("%s/images" % tftproot, []),
-            ("%s/images2" % tftproot, []),
-            ("%s/ppc" % tftproot, []),
-            ("%s/s390x" % tftproot, []),
-            ("%s/pxelinux.cfg" % tftproot, []),
-            ("%s/ipxe" % tftproot, []),
-            ("%s/grub/system" % tftproot, []),
-            ("%s/grub/system_link" % tftproot, []),
             ("%s/grub_config/grub/system" % libpath, []),
             ("%s/grub_config/grub/system_link" % libpath, []),
             ("%s/reporting" % etcpath, glob("templates/reporting/*")),
-            # Build empty directories to hold triggers
-            ("%s/triggers/add/distro/pre" % libpath, []),
-            ("%s/triggers/add/distro/post" % libpath, []),
-            ("%s/triggers/add/profile/pre" % libpath, []),
-            ("%s/triggers/add/profile/post" % libpath, []),
-            ("%s/triggers/add/system/pre" % libpath, []),
-            ("%s/triggers/add/system/post" % libpath, []),
-            ("%s/triggers/add/repo/pre" % libpath, []),
-            ("%s/triggers/add/repo/post" % libpath, []),
-            ("%s/triggers/add/mgmtclass/pre" % libpath, []),
-            ("%s/triggers/add/mgmtclass/post" % libpath, []),
-            ("%s/triggers/add/package/pre" % libpath, []),
-            ("%s/triggers/add/package/post" % libpath, []),
-            ("%s/triggers/add/file/pre" % libpath, []),
-            ("%s/triggers/add/file/post" % libpath, []),
-            ("%s/triggers/add/menu/pre" % libpath, []),
-            ("%s/triggers/add/menu/post" % libpath, []),
-            ("%s/triggers/delete/distro/pre" % libpath, []),
-            ("%s/triggers/delete/distro/post" % libpath, []),
-            ("%s/triggers/delete/profile/pre" % libpath, []),
-            ("%s/triggers/delete/profile/post" % libpath, []),
-            ("%s/triggers/delete/system/pre" % libpath, []),
-            ("%s/triggers/delete/system/post" % libpath, []),
-            ("%s/triggers/delete/repo/pre" % libpath, []),
-            ("%s/triggers/delete/repo/post" % libpath, []),
-            ("%s/triggers/delete/mgmtclass/pre" % libpath, []),
-            ("%s/triggers/delete/mgmtclass/post" % libpath, []),
-            ("%s/triggers/delete/package/pre" % libpath, []),
-            ("%s/triggers/delete/package/post" % libpath, []),
-            ("%s/triggers/delete/file/pre" % libpath, []),
-            ("%s/triggers/delete/file/post" % libpath, []),
-            ("%s/triggers/delete/menu/pre" % libpath, []),
-            ("%s/triggers/delete/menu/post" % libpath, []),
-            ("%s/triggers/install/pre" % libpath, []),
-            ("%s/triggers/install/post" % libpath, []),
-            ("%s/triggers/install/firstboot" % libpath, []),
-            ("%s/triggers/sync/pre" % libpath, []),
-            ("%s/triggers/sync/post" % libpath, []),
-            ("%s/triggers/change" % libpath, []),
-            ("%s/triggers/task/distro/pre" % libpath, []),
-            ("%s/triggers/task/distro/post" % libpath, []),
-            ("%s/triggers/task/profile/pre" % libpath, []),
-            ("%s/triggers/task/profile/post" % libpath, []),
-            ("%s/triggers/task/system/pre" % libpath, []),
-            ("%s/triggers/task/system/post" % libpath, []),
-            ("%s/triggers/task/repo/pre" % libpath, []),
-            ("%s/triggers/task/repo/post" % libpath, []),
-            ("%s/triggers/task/mgmtclass/pre" % libpath, []),
-            ("%s/triggers/task/mgmtclass/post" % libpath, []),
-            ("%s/triggers/task/package/pre" % libpath, []),
-            ("%s/triggers/task/package/post" % libpath, []),
-            ("%s/triggers/task/file/pre" % libpath, []),
-            ("%s/triggers/task/file/post" % libpath, []),
-            ("%s/triggers/task/menu/pre" % libpath, []),
-            ("%s/triggers/task/menu/post" % libpath, []),
-            # Build empty directories to hold the database
-            ("%s/collections" % libpath, []),
-            ("%s/collections/distros" % libpath, []),
-            ("%s/collections/images" % libpath, []),
-            ("%s/collections/profiles" % libpath, []),
-            ("%s/collections/repos" % libpath, []),
-            ("%s/collections/systems" % libpath, []),
-            ("%s/collections/mgmtclasses" % libpath, []),
-            ("%s/collections/packages" % libpath, []),
-            ("%s/collections/files" % libpath, []),
-            ("%s/collections/menus" % libpath, []),
             # logfiles
             ("%s/cobbler/kicklog" % logpath, []),
             ("%s/cobbler/syslog" % logpath, []),
             ("%s/httpd/cobbler" % logpath, []),
             ("%s/cobbler/anamon" % logpath, []),
             ("%s/cobbler/tasks" % logpath, []),
-            # web page directories that we own
-            ("%s/cobbler/localmirror" % webroot, []),
-            ("%s/cobbler/repo_mirror" % webroot, []),
-            ("%s/cobbler/distro_mirror" % webroot, []),
-            ("%s/cobbler/distro_mirror/config" % webroot, []),
-            ("%s/cobbler/links" % webroot, []),
-            ("%s/cobbler/misc" % webroot, []),
-            ("%s/cobbler/pub" % webroot, []),
-            ("%s/cobbler/rendered" % webroot, []),
-            ("%s/cobbler/images" % webroot, []),
-            # A script that isn't really data, wsgi script
-            ("%s/cobbler/svc/" % webroot, ["svc/services.py"]),
             # zone-specific templates directory
             ("%s/zone_templates" % etcpath, glob("templates/zone_templates/*")),
             # windows-specific templates directory
@@ -741,13 +736,175 @@ if __name__ == "__main__":
             ("%s/man1" % docpath, glob("build/sphinx/man/*.1")),
             ("%s/man5" % docpath, glob("build/sphinx/man/*.5")),
             ("%s/man8" % docpath, glob("build/sphinx/man/*.8")),
+            # tests
             ("%s/tests" % datadir, glob("tests/*.py")),
+            ("%s/tests/actions" % datadir, glob("tests/actions/*.py")),
+            (
+                "%s/tests/actions/buildiso" % datadir,
+                glob("tests/actions/buildiso/*.py"),
+            ),
+            ("%s/tests/api" % datadir, glob("tests/api/*.py")),
             ("%s/tests/cli" % datadir, glob("tests/cli/*.py")),
+            ("%s/tests/collections" % datadir, glob("tests/collections/*.py")),
+            ("%s/tests/items" % datadir, glob("tests/items/*.py")),
             ("%s/tests/modules" % datadir, glob("tests/modules/*.py")),
             (
                 "%s/tests/modules/authentication" % datadir,
                 glob("tests/modules/authentication/*.py"),
             ),
+            (
+                "%s/tests/modules/authorization" % datadir,
+                glob("tests/modules/authorization/*.py"),
+            ),
+            (
+                "%s/tests/modules/installation" % datadir,
+                glob("tests/modules/installation/*.py"),
+            ),
+            (
+                "%s/tests/modules/managers" % datadir,
+                glob("tests/modules/managers/*.py"),
+            ),
+            (
+                "%s/tests/modules/serializer" % datadir,
+                glob("tests/modules/serializer/*.py"),
+            ),
+            ("%s/tests/settings" % datadir, glob("tests/settings/*.py")),
+            (
+                "%s/tests/settings/migrations" % datadir,
+                glob("tests/settings/migrations/*.py"),
+            ),
+            ("%s/tests/special_cases" % datadir, glob("tests/special_cases/*.py")),
+            ("%s/tests/test_data" % datadir, glob("tests/test_data/*")),
+            ("%s/tests/test_data/V2_8_5" % datadir, glob("tests/test_data/V2_8_5/*")),
+            ("%s/tests/test_data/V3_0_0" % datadir, glob("tests/test_data/V3_0_0/*")),
+            (
+                "%s/tests/test_data/V3_0_0/settings.d" % datadir,
+                glob("tests/test_data/V3_0_0/settings.d/*"),
+            ),
+            ("%s/tests/test_data/V3_0_1" % datadir, glob("tests/test_data/V3_0_1/*")),
+            (
+                "%s/tests/test_data/V3_0_1/settings.d" % datadir,
+                glob("tests/test_data/V3_0_1/settings.d/*"),
+            ),
+            ("%s/tests/test_data/V3_1_0" % datadir, glob("tests/test_data/V3_1_0/*")),
+            (
+                "%s/tests/test_data/V3_1_0/settings.d" % datadir,
+                glob("tests/test_data/V3_1_0/settings.d/*"),
+            ),
+            ("%s/tests/test_data/V3_1_1" % datadir, glob("tests/test_data/V3_1_1/*")),
+            (
+                "%s/tests/test_data/V3_1_1/settings.d" % datadir,
+                glob("tests/test_data/V3_1_1/settings.d/*"),
+            ),
+            ("%s/tests/test_data/V3_1_2" % datadir, glob("tests/test_data/V3_1_2/*")),
+            (
+                "%s/tests/test_data/V3_1_2/settings.d" % datadir,
+                glob("tests/test_data/V3_1_2/settings.d/*"),
+            ),
+            ("%s/tests/test_data/V3_2_0" % datadir, glob("tests/test_data/V3_2_0/*")),
+            (
+                "%s/tests/test_data/V3_2_0/settings.d" % datadir,
+                glob("tests/test_data/V3_2_0/settings.d/*"),
+            ),
+            ("%s/tests/test_data/V3_2_1" % datadir, glob("tests/test_data/V3_2_1/*")),
+            (
+                "%s/tests/test_data/V3_2_1/settings.d" % datadir,
+                glob("tests/test_data/V3_2_1/settings.d/*"),
+            ),
+            ("%s/tests/test_data/V3_3_0" % datadir, glob("tests/test_data/V3_3_0/*")),
+            (
+                "%s/tests/test_data/V3_3_0/settings.d" % datadir,
+                glob("tests/test_data/V3_3_0/settings.d/*"),
+            ),
+            ("%s/tests/test_data/V3_3_1" % datadir, glob("tests/test_data/V3_3_1/*")),
+            (
+                "%s/tests/test_data/V3_3_1/settings.d" % datadir,
+                glob("tests/test_data/V3_3_1/settings.d/*"),
+            ),
+            ("%s/tests/test_data/V3_3_2" % datadir, glob("tests/test_data/V3_3_2/*")),
+            (
+                "%s/tests/test_data/V3_3_2/settings.d" % datadir,
+                glob("tests/test_data/V3_3_2/settings.d/*"),
+            ),
+            ("%s/tests/test_data/V3_3_3" % datadir, glob("tests/test_data/V3_3_3/*")),
+            (
+                "%s/tests/test_data/V3_3_3/settings.d" % datadir,
+                glob("tests/test_data/V3_3_3/settings.d/*"),
+            ),
             ("%s/tests/xmlrpcapi" % datadir, glob("tests/xmlrpcapi/*.py")),
+            ("%s/tests/test_data/V3_4_0" % datadir, glob("tests/test_data/V3_4_0/*")),
+            ("%s/tests/utils" % datadir, glob("tests/utils/*.py")),
+            (f"{datadir}/tests/performance", glob("tests/performance/*.py")),
+            # tests containers subpackage
+            ("%s/docker" % datadir, glob("docker/*")),
+            ("%s/docker/debs" % datadir, glob("docker/debs/*")),
+            ("%s/docker/debs/Debian_10" % datadir, glob("docker/debs/Debian_10/*")),
+            (
+                "%s/docker/debs/Debian_10/supervisord" % datadir,
+                glob("docker/debs/Debian_10/supervisord/*"),
+            ),
+            (
+                "%s/docker/debs/Debian_10/supervisord/conf.d" % datadir,
+                glob("docker/debs/Debian_10/supervisord/conf.d/*"),
+            ),
+            ("%s/docker/debs/Debian_11" % datadir, glob("docker/debs/Debian_11/*")),
+            (
+                "%s/docker/debs/Debian_11/supervisord" % datadir,
+                glob("docker/debs/Debian_11/supervisord/*"),
+            ),
+            (
+                "%s/docker/debs/Debian_11/supervisord/conf.d" % datadir,
+                glob("docker/debs/Debian_11/supervisord/conf.d/*"),
+            ),
+            ("%s/docker/develop" % datadir, glob("docker/develop/*")),
+            ("%s/docker/develop/openldap" % datadir, glob("docker/develop/openldap/*")),
+            ("%s/docker/develop/pam" % datadir, glob("docker/develop/pam/*")),
+            ("%s/docker/develop/scripts" % datadir, glob("docker/develop/scripts/*")),
+            (
+                "%s/docker/develop/supervisord" % datadir,
+                glob("docker/develop/supervisord/*"),
+            ),
+            (
+                "%s/docker/develop/supervisord/conf.d" % datadir,
+                glob("docker/develop/supervisord/conf.d/*"),
+            ),
+            ("%s/docker/rpms" % datadir, glob("docker/rpms/*")),
+            ("%s/docker/rpms/Fedora_34" % datadir, glob("docker/rpms/Fedora_34/*")),
+            (
+                "%s/docker/rpms/Fedora_34/supervisord" % datadir,
+                glob("docker/rpms/Fedora_34/supervisord/*"),
+            ),
+            (
+                "%s/docker/rpms/Fedora_34/supervisord/conf.d" % datadir,
+                glob("docker/rpms/Fedora_34/supervisord/conf.d/*"),
+            ),
+            (
+                "%s/docker/rpms/Rocky_Linux_8" % datadir,
+                glob("docker/rpms/Rocky_Linux_8/*"),
+            ),
+            (
+                "%s/docker/rpms/opensuse_leap" % datadir,
+                glob("docker/rpms/opensuse_leap/*"),
+            ),
+            (
+                "%s/docker/rpms/opensuse_leap/supervisord" % datadir,
+                glob("docker/rpms/opensuse_leap/supervisord/*"),
+            ),
+            (
+                "%s/docker/rpms/opensuse_leap/supervisord/conf.d" % datadir,
+                glob("docker/rpms/opensuse_leap/supervisord/conf.d/*"),
+            ),
+            (
+                "%s/docker/rpms/opensuse_tumbleweed" % datadir,
+                glob("docker/rpms/opensuse_tumbleweed/*"),
+            ),
+            (
+                "%s/docker/rpms/opensuse_tumbleweed/supervisord" % datadir,
+                glob("docker/rpms/opensuse_tumbleweed/supervisord/*"),
+            ),
+            (
+                "%s/docker/rpms/opensuse_tumbleweed/supervisord/conf.d" % datadir,
+                glob("docker/rpms/opensuse_tumbleweed/supervisord/conf.d/*"),
+            ),
         ],
     )

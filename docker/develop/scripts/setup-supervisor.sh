@@ -10,7 +10,15 @@ echo "Setup openLDAP"
 echo "Setup reposync"
 /code/docker/develop/scripts/setup-reposync.sh
 
+echo "Setup MongoDB"
+/code/docker/develop/scripts/setup-mongodb.sh
+
+echo "Enable Apache2 modules"
+a2enmod proxy
+a2enmod proxy_http
+
 echo "Install Cobbler"
+mkdir /srv/www/cobbler # Create web directory so the Cobbler daemon starts
 cd /code || exit
 make install
 
@@ -29,3 +37,6 @@ cobbler version
 
 echo "Execute system-test-env"
 make system-test-env
+
+echo "Update pytest"
+pip install --break-system-packages -U pytest

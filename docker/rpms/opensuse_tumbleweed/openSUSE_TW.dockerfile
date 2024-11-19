@@ -11,12 +11,14 @@ RUN zypper install -y          \
     acl                        \
     apache2                    \
     apache2-devel              \
-    apache2-mod_wsgi-python3   \
     bash-completion            \
     git                        \
     gzip                       \
+    curl                       \
+    wget2                      \
     make                       \
     util-linux                 \
+    openssl                    \
     hardlink                   \
     xorriso                    \
     ipmitool                   \
@@ -29,6 +31,7 @@ RUN zypper install -y          \
     python-rpm-macros          \
     python3                    \
     python3-Sphinx             \
+    python3-gunicorn           \
     python3-Cheetah3           \
     python3-Sphinx             \
     python3-dnspython          \
@@ -42,11 +45,14 @@ RUN zypper install -y          \
     python3-pycodestyle        \
     python3-schema             \
     python3-setuptools         \
+    python3-systemd            \
     python3-pip                \
     python3-PyYAML             \
     python3-wheel              \
     rpm-build                  \
-    which
+    which                      \
+    mtools                     \
+    dosfstools
 
 # Add bootloader packages
 RUN zypper install --no-recommends -y \

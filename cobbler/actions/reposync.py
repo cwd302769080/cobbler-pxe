@@ -1,49 +1,41 @@
 """
 Builds out and synchronizes yum repo mirrors.
 Initial support for rsync, perhaps reposync coming later.
-
-Copyright 2006-2007, Red Hat, Inc and Others
-Michael DeHaan <michael.dehaan AT gmail>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
-02110-1301  USA
 """
+
+# SPDX-License-Identifier: GPL-2.0-or-later
+# SPDX-FileCopyrightText: Copyright 2006-2007, Red Hat, Inc and Others
+# SPDX-FileCopyrightText: Michael DeHaan <michael.dehaan AT gmail>
+
 import logging
 import os
 import os.path
-import pipes
-import stat
+import shlex
 import shutil
-from typing import Optional, Union
+import stat
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 from cobbler import utils
-from cobbler import download_manager
-from cobbler.enums import RepoArchs, RepoBreeds, MirrorType
-from cobbler.utils import os_release
 from cobbler.cexceptions import CX
+from cobbler.enums import MirrorType, RepoArchs, RepoBreeds
+from cobbler.utils import filesystem_helpers, os_release
 
-HAS_LIBREPO = False
+if TYPE_CHECKING:
+    from cobbler.api import CobblerAPI
+    from cobbler.items.repo import Repo
+
 try:
-    import librepo
+    import librepo  # type: ignore
 
     HAS_LIBREPO = True
 except ModuleNotFoundError:
-    pass
+    # This is a constant since it is only defined once.
+    HAS_LIBREPO = False  # type: ignore
 
 
-def repo_walker(top, func, arg):
+def repo_walker(
+    top: str, func: Callable[[Any, str, List[str]], None], arg: Any
+) -> None:
     """
     Directory tree walk with callback function.
 
@@ -61,17 +53,19 @@ def repo_walker(top, func, arg):
     """
     try:
         names = os.listdir(top)
+        # The order of the return is not guaranteed and seems to depend on the fileystem thus sort the list
+        names.sort()
     except os.error:
         return
     func(arg, top, names)
     for name in names:
-        name = os.path.join(top, name)
+        path_name = os.path.join(top, name)
         try:
-            st = os.lstat(name)
+            file_stats = os.lstat(path_name)
         except os.error:
             continue
-        if stat.S_ISDIR(st.st_mode):
-            repo_walker(name, func, arg)
+        if stat.S_ISDIR(file_stats.st_mode):
+            repo_walker(path_name, func, arg)
 
 
 class RepoSync:
@@ -81,7 +75,7 @@ class RepoSync:
 
     # ==================================================================================
 
-    def __init__(self, api, tries: int = 1, nofail: bool = False):
+    def __init__(self, api: "CobblerAPI", tries: int = 1, nofail: bool = False) -> None:
         """
         Constructor
 
@@ -93,17 +87,16 @@ class RepoSync:
         self.api = api
         self.settings = api.settings()
         self.repos = api.repos()
-        self.rflags = self.settings.reposync_flags
+        self.rflags = self.settings.reposync_flags.split()
         self.tries = tries
         self.nofail = nofail
         self.logger = logging.getLogger()
-        self.dlmgr = download_manager.DownloadManager()
 
         self.logger.info("hello, reposync")
 
     # ===================================================================
 
-    def run(self, name: Optional[str] = None, verbose: bool = True):
+    def run(self, name: Optional[str] = None, verbose: bool = True) -> None:
         """
         Syncs the current repo configuration file with the filesystem.
 
@@ -119,7 +112,7 @@ class RepoSync:
             if name is not None and repo.name != name:
                 # Invoked to sync only a specific repo, this is not the one
                 continue
-            elif name is None and not repo.keep_updated:
+            if name is None and not repo.keep_updated:
                 # Invoked to run against all repos, but this one is off
                 self.logger.info("%s is set to not be updated", repo.name)
                 continue
@@ -135,7 +128,7 @@ class RepoSync:
             # Set the environment keys specified for this repo and save the old one if they modify an existing variable.
 
             env = repo.environment
-            old_env = {}
+            old_env: Dict[str, Any] = {}
 
             for k in list(env.keys()):
                 self.logger.debug("setting repo environment: %s=%s", k, env[k])
@@ -147,15 +140,18 @@ class RepoSync:
 
             # Which may actually NOT reposync if the repo is set to not mirror locally but that's a technicality.
 
-            for x in range(self.tries + 1, 1, -1):
-                success = False
+            success = False
+            for reposync_try in range(self.tries + 1, 1, -1):
                 try:
                     self.sync(repo)
                     success = True
                     break
-                except:
+                except Exception:
+                    success = False
                     utils.log_exc()
-                    self.logger.warning("reposync failed, tries left: %s", (x - 2))
+                    self.logger.warning(
+                        "reposync failed, tries left: %s", (reposync_try - 2)
+                    )
 
             # Cleanup/restore any environment variables that were added or changed above.
 
@@ -174,8 +170,7 @@ class RepoSync:
                 report_failure = True
                 if not self.nofail:
                     raise CX("reposync failed, retry limit reached, aborting")
-                else:
-                    self.logger.error("reposync failed, retry limit reached, skipping")
+                self.logger.error("reposync failed, retry limit reached, skipping")
 
             self.update_permissions(repo_path)
 
@@ -184,8 +179,7 @@ class RepoSync:
 
     # ==================================================================================
 
-    def sync(self, repo):
-
+    def sync(self, repo: "Repo") -> None:
         """
         Conditionally sync a repo, based on type.
 
@@ -204,40 +198,38 @@ class RepoSync:
             self.wget_sync(repo)
         else:
             raise CX(
-                "unable to sync repo (%s), unknown or unsupported repo type (%s)"
-                % (repo.name, repo.breed.value)
+                f"unable to sync repo ({repo.name}), unknown or unsupported repo type ({repo.breed.value})"
             )
 
     # ====================================================================================
 
-    def librepo_getinfo(self, dirname: str) -> dict:
-
+    def librepo_getinfo(self, dirname: str) -> Dict[Any, Any]:
         """
         Used to get records from a repomd.xml file of downloaded rpmmd repository.
 
         :param dirname: The local path of rpmmd repository.
         :return: The dict representing records from a repomd.xml file of rpmmd repository.
         """
+        # FIXME: Librepo has no typing stubs.
 
-        h = librepo.Handle()
-        r = librepo.Result()
-        h.setopt(librepo.LRO_REPOTYPE, librepo.LR_YUMREPO)
-        h.setopt(librepo.LRO_URLS, [dirname])
-        h.setopt(librepo.LRO_LOCAL, True)
-        h.setopt(librepo.LRO_CHECKSUM, True)
-        h.setopt(librepo.LRO_IGNOREMISSING, True)
+        librepo_handle = librepo.Handle()  # type: ignore
+        librepo_result = librepo.Result()  # type: ignore
+        librepo_handle.setopt(librepo.LRO_REPOTYPE, librepo.LR_YUMREPO)  # type: ignore
+        librepo_handle.setopt(librepo.LRO_URLS, [dirname])  # type: ignore
+        librepo_handle.setopt(librepo.LRO_LOCAL, True)  # type: ignore
+        librepo_handle.setopt(librepo.LRO_CHECKSUM, True)  # type: ignore
+        librepo_handle.setopt(librepo.LRO_IGNOREMISSING, True)  # type: ignore
 
         try:
-            h.perform(r)
-        except librepo.LibrepoException as e:
-            raise CX("librepo error: " + dirname + " - " + e.args[1]) from e
+            librepo_handle.perform(librepo_result)  # type: ignore
+        except librepo.LibrepoException as error:  # type: ignore
+            raise CX("librepo error: " + dirname + " - " + error.args[1]) from error  # type: ignore
 
-        rmd = r.getinfo(librepo.LRR_RPMMD_REPOMD)["records"]
-        return rmd
+        return librepo_result.getinfo(librepo.LRR_RPMMD_REPOMD).get("records", {})  # type: ignore
 
     # ====================================================================================
 
-    def createrepo_walker(self, repo, dirname: str, fnames):
+    def createrepo_walker(self, repo: "Repo", dirname: str, fnames: Any) -> None:
         """
         Used to run createrepo on a copied Yum mirror.
 
@@ -249,24 +241,32 @@ class RepoSync:
             utils.remove_yum_olddata(dirname)
 
             # add any repo metadata we can use
-            mdoptions = []
+            mdoptions: List[str] = []
             origin_path = os.path.join(dirname, ".origin")
             repodata_path = os.path.join(origin_path, "repodata")
 
             if os.path.isfile(os.path.join(repodata_path, "repomd.xml")):
-                rd = self.librepo_getinfo(origin_path)
+                repo_data = self.librepo_getinfo(origin_path)
 
-                if "group" in rd:
-                    groupmdfile = rd["group"]["location_href"]
-                    mdoptions.append("-g %s" % os.path.join(origin_path, groupmdfile))
-                if "prestodelta" in rd:
+                if "group" in repo_data:
+                    groupmdfile = repo_data["group"]["location_href"]
+                    mdoptions += ["-g", os.path.join(origin_path, groupmdfile)]
+                if "prestodelta" in repo_data:
                     # need createrepo >= 0.9.7 to add deltas
                     if utils.get_family() in ("redhat", "suse"):
-                        cmd = "/usr/bin/rpmquery --queryformat=%{VERSION} createrepo"
-                        createrepo_ver = utils.subprocess_get(cmd)
+                        cmd = [
+                            "/usr/bin/rpmquery",
+                            "--queryformat=%{VERSION}",
+                            "createrepo",
+                        ]
+                        createrepo_ver = utils.subprocess_get(cmd, shell=False)
                         if not createrepo_ver[0:1].isdigit():
-                            cmd = "/usr/bin/rpmquery --queryformat=%{VERSION} createrepo_c"
-                            createrepo_ver = utils.subprocess_get(cmd)
+                            cmd = [
+                                "/usr/bin/rpmquery",
+                                "--queryformat=%{VERSION}",
+                                "createrepo_c",
+                            ]
+                            createrepo_ver = utils.subprocess_get(cmd, shell=False)
                         if utils.compare_versions_gt(createrepo_ver, "0.9.7"):
                             mdoptions.append("--deltas")
                         else:
@@ -276,23 +276,18 @@ class RepoSync:
                             )
 
             blended = utils.blender(self.api, False, repo)
-            flags = blended.get("createrepo_flags", "(ERROR: FLAGS)")
+            flags = blended.get("createrepo_flags", "(ERROR: FLAGS)").split()
             try:
-                cmd = "createrepo %s %s %s" % (
-                    " ".join(mdoptions),
-                    flags,
-                    pipes.quote(dirname),
-                )
-                utils.subprocess_call(cmd)
-            except:
+                cmd = ["createrepo"] + mdoptions + flags + [shlex.quote(dirname)]
+                utils.subprocess_call(cmd, shell=False)
+            except Exception:
                 utils.log_exc()
                 self.logger.error("createrepo failed.")
             del fnames[:]  # we're in the right place
 
     # ====================================================================================
 
-    def wget_sync(self, repo):
-
+    def wget_sync(self, repo: "Repo") -> None:
         """
         Handle mirroring of directories using wget
 
@@ -301,14 +296,14 @@ class RepoSync:
 
         mirror_program = "/usr/bin/wget"
         if not os.path.exists(mirror_program):
-            raise CX("no %s found, please install it" % mirror_program)
+            raise CX(f"no {mirror_program} found, please install it")
 
         if repo.mirror_type != MirrorType.BASEURL:
             raise CX(
                 "mirrorlist and metalink mirror types is not supported for wget'd repositories"
             )
 
-        if repo.rpm_list != "" and repo.rpm_list != []:
+        if repo.rpm_list not in ("", []):
             self.logger.warning("--rpm-list is not supported for wget'd repositories")
 
         dest_path = os.path.join(self.settings.webdir, "repo_mirror", repo.name)
@@ -323,20 +318,19 @@ class RepoSync:
             "inf",
             "-nd",
             "-P",
-            pipes.quote(dest_path),
-            pipes.quote(repo.mirror),
+            shlex.quote(dest_path),
+            shlex.quote(repo.mirror),
         ]
-        rc = utils.subprocess_call(cmd, shell=False)
+        return_value = utils.subprocess_call(cmd, shell=False)
 
-        if rc != 0:
+        if return_value != 0:
             raise CX("cobbler reposync failed")
         repo_walker(dest_path, self.createrepo_walker, repo)
         self.create_local_file(dest_path, repo)
 
     # ====================================================================================
 
-    def rsync_sync(self, repo):
-
+    def rsync_sync(self, repo: "Repo") -> None:
         """
         Handle copying of rsync:// and rsync-over-ssh repos.
 
@@ -353,34 +347,37 @@ class RepoSync:
                 "mirrorlist and metalink mirror types is not supported for rsync'd repositories"
             )
 
-        if repo.rpm_list != "" and repo.rpm_list != []:
+        if repo.rpm_list not in ("", []):
             self.logger.warning("--rpm-list is not supported for rsync'd repositories")
 
         dest_path = os.path.join(self.settings.webdir, "repo_mirror", repo.name)
 
-        spacer = ""
+        spacer: List[str] = []
         if not repo.mirror.startswith("rsync://") and not repo.mirror.startswith("/"):
-            spacer = "-e ssh"
+            spacer = ["-e ssh"]
         if not repo.mirror.endswith("/"):
-            repo.mirror = "%s/" % repo.mirror
+            repo.mirror = f"{repo.mirror}/"
 
-        flags = ""
-        for x in repo.rsyncopts:
-            if repo.rsyncopts[x]:
-                flags += " %s %s" % (x, repo.rsyncopts[x])
+        flags: List[str] = []
+        for repo_option in repo.rsyncopts:
+            if repo.rsyncopts[repo_option]:
+                flags.append(f"{repo_option} {repo.rsyncopts[repo_option]}")
             else:
-                flags += " %s" % x
+                flags.append(f"{repo_option}")
 
-        if flags == "":
-            flags = self.settings.reposync_rsync_flags
+        if not flags:
+            flags = self.settings.reposync_rsync_flags.split()
 
-        cmd = (
-            "rsync %s --delete-after %s --delete --exclude-from=/etc/cobbler/rsync.exclude %s %s"
-            % (flags, spacer, pipes.quote(repo.mirror), pipes.quote(dest_path))
-        )
-        rc = utils.subprocess_call(cmd)
+        cmd = ["rsync"] + flags + ["--delete-after"]
+        cmd += spacer + [
+            "--delete",
+            "--exclude-from=/etc/cobbler/rsync.exclude",
+            shlex.quote(repo.mirror),
+            shlex.quote(dest_path),
+        ]
+        return_code = utils.subprocess_call(cmd, shell=False)
 
-        if rc != 0:
+        if return_code != 0:
             raise CX("cobbler reposync failed")
 
         # If ran in archive mode then repo should already contain all repodata and does not need createrepo run
@@ -388,13 +385,12 @@ class RepoSync:
         if "--archive" in flags:
             archive = True
         else:
-            # split flags and skip all --{options} as we need to look for combined flags like -vaH
-            fl = flags.split()
-            for f in fl:
-                if f.startswith("--"):
+            # skip all flags --{options} as we need to look for combined flags like -vaH
+            for option in flags:
+                if option.startswith("--"):
                     pass
                 else:
-                    if "a" in f:
+                    if "a" in option:
                         archive = True
                         break
         if not archive:
@@ -404,8 +400,8 @@ class RepoSync:
 
     # ====================================================================================
 
-    def reposync_cmd(self) -> str:
-
+    @staticmethod
+    def reposync_cmd() -> List[str]:
         """
         Determine reposync command
 
@@ -415,10 +411,11 @@ class RepoSync:
         if not HAS_LIBREPO:
             raise CX("no librepo found, please install python3-librepo")
 
-        if os.path.exists("/usr/bin/dnf"):
-            cmd = "/usr/bin/dnf reposync"
-        elif os.path.exists("/usr/bin/reposync"):
-            cmd = "/usr/bin/reposync"
+        if os.path.exists("/usr/bin/reposync"):
+            cmd = ["/usr/bin/reposync"]
+        # DNF5 does not have a reposync subcommand
+        elif os.path.exists("/usr/bin/dnf"):
+            cmd = ["/usr/bin/dnf", "reposync"]
         else:
             # Warn about not having yum-utils.  We don't want to require it in the package because Fedora 22+ has moved
             # to dnf.
@@ -427,22 +424,17 @@ class RepoSync:
 
     # ====================================================================================
 
-    def rhn_sync(self, repo):
-
+    def rhn_sync(self, repo: "Repo") -> None:
         """
         Handle mirroring of RHN repos.
 
         :param repo: The repo object to synchronize.
         """
-
-        # reposync command
-        cmd = self.reposync_cmd()
-
         # flag indicating not to pull the whole repo
         has_rpm_list = False
 
         # detect cases that require special handling
-        if repo.rpm_list != "" and repo.rpm_list != []:
+        if repo.rpm_list not in ("", []):
             has_rpm_list = True
 
         # Create yum config file for use by reposync
@@ -465,12 +457,6 @@ class RepoSync:
         if has_rpm_list:
             self.logger.warning("warning: --rpm-list is not supported for RHN content")
         rest = repo.mirror[6:]  # everything after rhn://
-        cmd = "%s %s --repo=%s -p %s" % (
-            cmd,
-            self.rflags,
-            pipes.quote(rest),
-            pipes.quote(repos_path),
-        )
         if repo.name != rest:
             args = {"name": repo.name, "rest": rest}
             raise CX(
@@ -479,19 +465,23 @@ class RepoSync:
             )
 
         arch = repo.arch.value
-
         if arch == "i386":
             # Counter-intuitive, but we want the newish kernels too
             arch = "i686"
 
+        cmd = self.reposync_cmd()
+        cmd += self.rflags + [
+            f"--repo={shlex.quote(rest)}",
+            f"--download-path={shlex.quote(repos_path)}",
+        ]
         if arch != "none":
-            cmd = "%s -a %s" % (cmd, arch)
+            cmd.append(f'--arch="{arch}"')
 
         # Now regardless of whether we're doing yumdownloader or reposync or whether the repo was http://, ftp://, or
         # rhn://, execute all queued commands here. Any failure at any point stops the operation.
 
         if repo.mirror_locally:
-            utils.subprocess_call(cmd)
+            utils.subprocess_call(cmd, shell=False)
 
         # Some more special case handling for RHN. Create the config file now, because the directory didn't exist
         # earlier.
@@ -509,7 +499,9 @@ class RepoSync:
 
     # ====================================================================================
 
-    def gen_urlgrab_ssl_opts(self, yumopts) -> Union[str, bool]:
+    def gen_urlgrab_ssl_opts(
+        self, yumopts: Dict[str, Any]
+    ) -> Tuple[Optional[Tuple[Any, ...]], bool]:
         """
         This function translates yum repository options into the appropriate options for python-requests
 
@@ -527,17 +519,13 @@ class RepoSync:
         # Note that the default of requests is to verify the peer and host but the default here is NOT to verify them
         # unless sslverify is explicitly set to 1 in yumopts.
         if "sslverify" in yumopts:
-            if yumopts["sslverify"] == 1:
-                verify = True
-            else:
-                verify = False
+            verify = yumopts["sslverify"] == 1
 
-        return (cert, verify)
+        return cert, verify
 
     # ====================================================================================
 
-    def yum_sync(self, repo):
-
+    def yum_sync(self, repo: "Repo") -> None:
         """
         Handle copying of http:// and ftp:// yum repos.
 
@@ -558,7 +546,7 @@ class RepoSync:
         has_rpm_list = False
 
         # detect cases that require special handling
-        if repo.rpm_list != "" and repo.rpm_list != []:
+        if repo.rpm_list not in ("", []):
             has_rpm_list = True
 
         # create yum config file for use by reposync
@@ -577,48 +565,45 @@ class RepoSync:
 
         if not has_rpm_list:
             # If we have not requested only certain RPMs, use reposync
-            cmd = "%s %s --config=%s --repoid=%s -p %s" % (
-                cmd,
-                self.rflags,
-                temp_file,
-                pipes.quote(repo.name),
-                pipes.quote(repos_path),
-            )
+            cmd += self.rflags + [
+                f"--config={temp_file}",
+                f"--repoid={shlex.quote(repo.name)}",
+                f"--download-path={shlex.quote(repos_path)}",
+            ]
             if arch != "none":
-                cmd = "%s -a %s" % (cmd, arch)
+                cmd.append(f"--arch={arch}")
 
         else:
             # Create the output directory if it doesn't exist
             if not os.path.exists(dest_path):
                 os.makedirs(dest_path)
 
-            use_source = ""
-            if arch == "src":
-                use_source = "--source"
-
             # Older yumdownloader sometimes explodes on --resolvedeps if this happens to you, upgrade yum & yum-utils
-            extra_flags = self.settings.yumdownloader_flags
-            cmd = "/usr/bin/dnf download"
-            cmd = "%s %s %s --disablerepo=* --enablerepo=%s -c %s --destdir=%s %s" % (
-                cmd,
-                extra_flags,
-                use_source,
-                pipes.quote(repo.name),
-                temp_file,
-                pipes.quote(dest_path),
-                " ".join(repo.rpm_list),
-            )
+            extra_flags = self.settings.yumdownloader_flags.split()
+            cmd = [
+                "/usr/bin/dnf",
+                "download",
+            ] + extra_flags
+            if arch == "src":
+                cmd.append("--source")
+            cmd += [
+                "--disablerepo=*",
+                f"--enablerepo={shlex.quote(repo.name)}",
+                f"-c={temp_file}",
+                f"--destdir={shlex.quote(dest_path)}",
+            ]
+            cmd += repo.rpm_list
 
         # Now regardless of whether we're doing yumdownloader or reposync or whether the repo was http://, ftp://, or
         # rhn://, execute all queued commands here.  Any failure at any point stops the operation.
 
-        rc = utils.subprocess_call(cmd)
-        if rc != 0:
+        return_code = utils.subprocess_call(cmd, shell=False)
+        if return_code != 0:
             raise CX("cobbler reposync failed")
 
         # download any metadata we can use
         proxy = None
-        if repo.proxy != "<<None>>" and repo.proxy != "":
+        if repo.proxy not in ("<<None>>", ""):
             proxy = repo.proxy
         (cert, verify) = self.gen_urlgrab_ssl_opts(repo.yumopts)
 
@@ -632,37 +617,39 @@ class RepoSync:
             self.logger.info("Deleted old repo metadata for %s", repodata_path)
             shutil.rmtree(repodata_path, ignore_errors=False, onerror=None)
 
-        h = librepo.Handle()
-        r = librepo.Result()
-        h.setopt(librepo.LRO_REPOTYPE, librepo.LR_YUMREPO)
-        h.setopt(librepo.LRO_CHECKSUM, True)
-        h.setopt(librepo.LRO_DESTDIR, temp_path)
+        librepo_handle = librepo.Handle()  # type: ignore
+        librepo_result = librepo.Result()  # type: ignore
+        librepo_handle.setopt(librepo.LRO_REPOTYPE, librepo.LR_YUMREPO)  # type: ignore
+        librepo_handle.setopt(librepo.LRO_CHECKSUM, True)  # type: ignore
+        librepo_handle.setopt(librepo.LRO_DESTDIR, temp_path)  # type: ignore
 
         if repo.mirror_type == MirrorType.METALINK:
-            h.setopt(librepo.LRO_METALINKURL, repo.mirror)
+            librepo_handle.setopt(librepo.LRO_METALINKURL, repo.mirror)  # type: ignore
         elif repo.mirror_type == MirrorType.MIRRORLIST:
-            h.setopt(librepo.LRO_MIRRORLISTURL, repo.mirror)
+            librepo_handle.setopt(librepo.LRO_MIRRORLISTURL, repo.mirror)  # type: ignore
         elif repo.mirror_type == MirrorType.BASEURL:
-            h.setopt(librepo.LRO_URLS, [repo.mirror])
+            librepo_handle.setopt(librepo.LRO_URLS, [repo.mirror])  # type: ignore
 
         if verify:
-            h.setopt(librepo.LRO_SSLVERIFYPEER, True)
-            h.setopt(librepo.LRO_SSLVERIFYHOST, True)
+            librepo_handle.setopt(librepo.LRO_SSLVERIFYPEER, True)  # type: ignore
+            librepo_handle.setopt(librepo.LRO_SSLVERIFYHOST, True)  # type: ignore
 
         if cert:
             sslcacert, sslclientcert, sslclientkey = cert
-            h.setopt(librepo.LRO_SSLCACERT, sslcacert)
-            h.setopt(librepo.LRO_SSLCLIENTCERT, sslclientcert)
-            h.setopt(librepo.LRO_SSLCLIENTKEY, sslclientkey)
+            librepo_handle.setopt(librepo.LRO_SSLCACERT, sslcacert)  # type: ignore
+            librepo_handle.setopt(librepo.LRO_SSLCLIENTCERT, sslclientcert)  # type: ignore
+            librepo_handle.setopt(librepo.LRO_SSLCLIENTKEY, sslclientkey)  # type: ignore
 
         if proxy:
-            h.setopt(librepo.LRO_PROXY, proxy)
-            h.setopt(librepo.LRO_PROXYTYPE, librepo.PROXY_HTTP)
+            librepo_handle.setopt(librepo.LRO_PROXY, proxy)  # type: ignore
+            librepo_handle.setopt(librepo.LRO_PROXYTYPE, librepo.PROXY_HTTP)  # type: ignore
 
         try:
-            h.perform(r)
-        except librepo.LibrepoException as e:
-            raise CX("librepo error: " + temp_path + " - " + e.args[1]) from e
+            librepo_handle.perform(librepo_result)  # type: ignore
+        except librepo.LibrepoException as exception:  # type: ignore
+            raise CX(
+                "librepo error: " + temp_path + " - " + exception.args[1]  # type: ignore
+            ) from exception
 
         # now run createrepo to rebuild the index
         if repo.mirror_locally:
@@ -670,7 +657,7 @@ class RepoSync:
 
     # ====================================================================================
 
-    def apt_sync(self, repo):
+    def apt_sync(self, repo: "Repo") -> None:
         """
         Handle copying of http:// and ftp:// debian repos.
 
@@ -680,10 +667,10 @@ class RepoSync:
         # Warn about not having mirror program.
         mirror_program = "/usr/bin/debmirror"
         if not os.path.exists(mirror_program):
-            raise CX("no %s found, please install it" % mirror_program)
+            raise CX(f"no {mirror_program} found, please install it")
 
         # detect cases that require special handling
-        if repo.rpm_list != "" and repo.rpm_list != []:
+        if repo.rpm_list not in ("", []):
             raise CX("has_rpm_list not yet supported on apt repos")
 
         if repo.arch == RepoArchs.NONE:
@@ -714,44 +701,42 @@ class RepoSync:
             dists = ",".join(repo.apt_dists)
             components = ",".join(repo.apt_components)
 
-            mirror_data = "--method=%s --host=%s --root=%s --dist=%s --section=%s" % (
-                pipes.quote(method),
-                pipes.quote(host),
-                pipes.quote(mirror),
-                pipes.quote(dists),
-                pipes.quote(components),
-            )
+            mirror_data = [
+                f"--method={shlex.quote(method)}",
+                f"--host={shlex.quote(host)}",
+                f"--root={shlex.quote(mirror)}",
+                f"--dist={shlex.quote(dists)}",
+                f"--section={shlex.quote(components)}",
+            ]
 
-            rflags = "--nocleanup"
-            for x in repo.yumopts:
-                if repo.yumopts[x]:
-                    rflags += " %s=%s" % (x, repo.yumopts[x])
+            rflags = ["--nocleanup"]
+            for repo_yumoption in repo.yumopts:
+                if repo.yumopts[repo_yumoption]:
+                    rflags.append(f"{repo_yumoption}={repo.yumopts[repo_yumoption]}")
                 else:
-                    rflags += " %s" % x
-            cmd = "%s %s %s %s" % (
-                mirror_program,
-                rflags,
-                mirror_data,
-                pipes.quote(dest_path),
-            )
+                    rflags.append(repo_yumoption)
+            cmd = [mirror_program] + rflags + mirror_data + [shlex.quote(dest_path)]
             if repo.arch == RepoArchs.SRC:
-                cmd = "%s --source" % cmd
+                cmd.append("--source")
             else:
                 arch = repo.arch.value
                 if arch == "x86_64":
                     arch = "amd64"  # FIX potential arch errors
-                cmd = "%s --nosource -a %s" % (cmd, arch)
+                cmd.append("--nosource")
+                cmd.append(f"-a={arch}")
 
             # Set's an environment variable for subprocess, otherwise debmirror will fail as it needs this variable to
             # exist.
             # FIXME: might this break anything? So far it doesn't
             os.putenv("HOME", "/var/lib/cobbler")
 
-            rc = utils.subprocess_call(cmd)
-            if rc != 0:
+            return_code = utils.subprocess_call(cmd, shell=False)
+            if return_code != 0:
                 raise CX("cobbler reposync failed")
 
-    def create_local_file(self, dest_path: str, repo, output: bool = True) -> str:
+    def create_local_file(
+        self, dest_path: str, repo: "Repo", output: bool = True
+    ) -> str:
         """
         Creates Yum config files for use by reposync
 
@@ -772,77 +757,79 @@ class RepoSync:
         if output:
             fname = os.path.join(dest_path, "config.repo")
         else:
-            fname = os.path.join(dest_path, "%s.repo" % repo.name)
+            fname = os.path.join(dest_path, f"{repo.name}.repo")
         self.logger.debug("creating: %s", fname)
         if not os.path.exists(dest_path):
-            utils.mkdir(dest_path)
-        config_file = open(fname, "w+")
-        if not output:
-            config_file.write("[main]\nreposdir=/dev/null\n")
-        config_file.write("[%s]\n" % repo.name)
-        config_file.write("name=%s\n" % repo.name)
+            filesystem_helpers.mkdir(dest_path)
+        with open(fname, "w", encoding="UTF-8") as config_file:
+            if not output:
+                config_file.write("[main]\nreposdir=/dev/null\n")
+            config_file.write(f"[{repo.name}]\n")
+            config_file.write(f"name={repo.name}\n")
 
-        optenabled = False
-        optgpgcheck = False
-        if output:
-            if repo.mirror_locally:
-                line = (
-                    "baseurl=http://${http_server}/cobbler/repo_mirror/%s\n" % repo.name
-                )
+            optenabled = False
+            optgpgcheck = False
+            if output:
+                if repo.mirror_locally:
+                    protocol = self.api.settings().autoinstall_scheme
+                    line = f"baseurl={protocol}://${{http_server}}/cobbler/repo_mirror/{repo.name}\n"
+                else:
+                    mstr = repo.mirror
+                    if mstr.startswith("/"):
+                        mstr = f"file://{mstr}"
+                    line = f"{repo.mirror_type.value}={mstr}\n"
+
+                config_file.write(line)
+                # User may have options specific to certain yum plugins add them to the file
+                for repo_yumoption in repo.yumopts:
+                    if repo_yumoption == "enabled":
+                        optenabled = True
+                    if repo_yumoption == "gpgcheck":
+                        optgpgcheck = True
             else:
                 mstr = repo.mirror
                 if mstr.startswith("/"):
-                    mstr = "file://%s" % mstr
-                line = "%s=%s\n" % (repo.mirror_type.value, mstr)
+                    mstr = f"file://{mstr}"
+                line = repo.mirror_type.value + f"={mstr}\n"
+                if self.settings.http_port not in (80, "80"):
+                    http_server = f"{self.settings.server}:{self.settings.http_port}"
+                else:
+                    http_server = self.settings.server
+                line = line.replace("@@server@@", http_server)
+                config_file.write(line)
 
-            config_file.write(line)
-            # User may have options specific to certain yum plugins add them to the file
-            for x in repo.yumopts:
-                if x == "enabled":
-                    optenabled = True
-                if x == "gpgcheck":
-                    optgpgcheck = True
-        else:
-            mstr = repo.mirror
-            if mstr.startswith("/"):
-                mstr = "file://%s" % mstr
-            line = repo.mirror_type.value + "=%s\n" % mstr
-            if self.settings.http_port not in (80, "80"):
-                http_server = "%s:%s" % (self.settings.server, self.settings.http_port)
-            else:
-                http_server = self.settings.server
-            line = line.replace("@@server@@", http_server)
-            config_file.write(line)
+                config_proxy = None
+                if repo.proxy == "<<inherit>>":
+                    config_proxy = self.settings.proxy_url_ext
+                elif repo.proxy not in ("", "<<None>>"):
+                    config_proxy = repo.proxy
 
-            config_proxy = None
-            if repo.proxy == "<<inherit>>":
-                config_proxy = self.settings.proxy_url_ext
-            elif repo.proxy != "" and repo.proxy != "<<None>>":
-                config_proxy = repo.proxy
+                if config_proxy is not None:
+                    config_file.write(f"proxy={config_proxy}\n")
+                if "exclude" in list(repo.yumopts.keys()):
+                    self.logger.debug("excluding: %s", repo.yumopts["exclude"])
+                    config_file.write(f"exclude={repo.yumopts['exclude']}\n")
 
-            if config_proxy is not None:
-                config_file.write("proxy=%s\n" % config_proxy)
-            if "exclude" in list(repo.yumopts.keys()):
-                self.logger.debug("excluding: %s", repo.yumopts["exclude"])
-                config_file.write("exclude=%s\n" % repo.yumopts["exclude"])
-
-        if not optenabled:
-            config_file.write("enabled=1\n")
-        config_file.write("priority=%s\n" % repo.priority)
-        # FIXME: potentially might want a way to turn this on/off on a per-repo basis
-        if not optgpgcheck:
-            config_file.write("gpgcheck=0\n")
-        # user may have options specific to certain yum plugins
-        # add them to the file
-        for x in repo.yumopts:
-            if not (output and repo.mirror_locally and x.startswith("ssl")):
-                config_file.write("%s=%s\n" % (x, repo.yumopts[x]))
-        config_file.close()
+            if not optenabled:
+                config_file.write("enabled=1\n")
+            config_file.write(f"priority={repo.priority}\n")
+            # FIXME: potentially might want a way to turn this on/off on a per-repo basis
+            if not optgpgcheck:
+                config_file.write("gpgcheck=0\n")
+            # user may have options specific to certain yum plugins
+            # add them to the file
+            for repo_yumoption in repo.yumopts:
+                if not (
+                    output and repo.mirror_locally and repo_yumoption.startswith("ssl")
+                ):
+                    config_file.write(
+                        f"{repo_yumoption}={repo.yumopts[repo_yumoption]}\n"
+                    )
         return fname
 
     # ==================================================================================
 
-    def update_permissions(self, repo_path):
+    def update_permissions(self, repo_path: str) -> None:
         """
         Verifies that permissions and contexts after an rsync are as expected.
         Sending proper rsync flags should prevent the need for this, though this is largely a safeguard.
@@ -858,9 +845,8 @@ class RepoSync:
         elif dist in ("debian", "ubuntu"):
             owner = "root:www-data"
 
-        cmd1 = "chown -R " + owner + " %s" % repo_path
+        cmd1 = ["chown", "-R", owner, repo_path]
+        utils.subprocess_call(cmd1, shell=False)
 
-        utils.subprocess_call(cmd1)
-
-        cmd2 = "chmod -R 755 %s" % repo_path
-        utils.subprocess_call(cmd2)
+        cmd2 = ["chmod", "-R", "755", repo_path]
+        utils.subprocess_call(cmd2, shell=False)

@@ -1,32 +1,23 @@
 """
-Copyright 2006-2009, Red Hat, Inc and Others
-Michael DeHaan <michael.dehaan AT gmail>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
-02110-1301  USA
+Cobbler Trigger Module that checks against a list of hardcoded potential common errors in a Cobbler installation.
 """
 
+# SPDX-License-Identifier: GPL-2.0-or-later
+# SPDX-FileCopyrightText: Copyright 2006-2009, Red Hat, Inc and Others
+# SPDX-FileCopyrightText: Michael DeHaan <michael.dehaan AT gmail>
 
 import glob
 import logging
 import os
 import re
-
+from typing import TYPE_CHECKING, List
 from xmlrpc.client import ServerProxy
 
 from cobbler import utils
+from cobbler.utils import process_management
+
+if TYPE_CHECKING:
+    from cobbler.api import CobblerAPI
 
 
 class CobblerCheck:
@@ -35,7 +26,7 @@ class CobblerCheck:
     serving up content. This is the code behind 'cobbler check'.
     """
 
-    def __init__(self, api):
+    def __init__(self, api: "CobblerAPI") -> None:
         """
         Constructor
 
@@ -46,14 +37,14 @@ class CobblerCheck:
         self.logger = logging.getLogger()
         self.checked_family = ""
 
-    def run(self):
+    def run(self) -> List[str]:
         """
         The CLI usage is "cobbler check" before "cobbler sync".
 
         :return: None if there are no errors, otherwise returns a list of things to correct prior to running application
                  'for real'.
         """
-        status = []
+        status: List[str] = []
         self.checked_family = utils.get_family()
         self.check_name(status)
         self.check_selinux(status)
@@ -98,7 +89,7 @@ class CobblerCheck:
 
         return status
 
-    def check_for_ksvalidator(self, status):
+    def check_for_ksvalidator(self, status: List[str]) -> None:
         """
         Check if the ``ksvalidator`` is present in ``/usr/bin``.
 
@@ -112,7 +103,8 @@ class CobblerCheck:
         if not os.path.exists("/usr/bin/ksvalidator"):
             status.append("ksvalidator was not found, install pykickstart")
 
-    def check_for_cman(self, status):
+    @staticmethod
+    def check_for_cman(status: List[str]) -> None:
         """
         Check if the fence agents are available. This is done through checking if the binary ``fence_ilo`` is present
         in ``/sbin`` or ``/usr/sbin``.
@@ -128,7 +120,7 @@ class CobblerCheck:
                 "features. install cman or fence-agents to use them"
             )
 
-    def check_service(self, status, which, notes=""):
+    def check_service(self, status: List[str], which: str, notes: str = "") -> None:
         """
         Check if the service command is available or the old init.d system has to be used.
 
@@ -137,46 +129,48 @@ class CobblerCheck:
         :param notes: A manual not to attach.
         """
         if notes != "":
-            notes = " (NOTE: %s)" % notes
+            notes = f" (NOTE: {notes})"
         return_code = 0
-        if utils.is_supervisord():
+        if process_management.is_supervisord():
             with ServerProxy("http://localhost:9001/RPC2") as server:
                 process_info = server.supervisor.getProcessInfo(which)
-                if process_info["statename"] != "RUNNING":
-                    status.append("service %s is not running%s" % (which, notes))
+                if (
+                    isinstance(process_info, dict)
+                    and process_info["statename"] != "RUNNING"
+                ):
+                    status.append(f"service {which} is not running{notes}")
                     return
-        elif utils.is_systemd():
+        elif process_management.is_systemd():
             return_code = utils.subprocess_call(
-                "systemctl status %s > /dev/null 2>/dev/null" % which, shell=True
+                ["systemctl", "status", which], shell=False
             )
             if return_code != 0:
-                status.append("service %s is not running%s" % (which, notes))
+                status.append(f'service "{which}" is not running{notes}')
                 return
         elif self.checked_family in ("redhat", "suse"):
-            if os.path.exists("/etc/rc.d/init.d/%s" % which):
+            if os.path.exists(f"/etc/rc.d/init.d/{which}"):
                 return_code = utils.subprocess_call(
-                    "/sbin/service %s status > /dev/null 2>/dev/null" % which,
-                    shell=True,
+                    ["/sbin/service", which, "status"], shell=False
                 )
             if return_code != 0:
-                status.append("service %s is not running%s" % (which, notes))
+                status.append(f"service {which} is not running{notes}")
                 return
         elif self.checked_family == "debian":
             # we still use /etc/init.d
-            if os.path.exists("/etc/init.d/%s" % which):
+            if os.path.exists(f"/etc/init.d/{which}"):
                 return_code = utils.subprocess_call(
-                    "/etc/init.d/%s status /dev/null 2>/dev/null" % which, shell=True
+                    [f"/etc/init.d/{which}", "status"], shell=False
                 )
             if return_code != 0:
-                status.append("service %s is not running%s" % (which, notes))
+                status.append(f"service {which} is not running{notes}")
                 return
         else:
             status.append(
-                "Unknown distribution type, cannot check for running service %s" % which
+                f"Unknown distribution type, cannot check for running service {which}"
             )
             return
 
-    def check_iptables(self, status):
+    def check_iptables(self, status: List[str]) -> None:
         """
         Check if iptables is running. If yes print the needed ports. This is unavailable on Debian, SUSE and CentOS7 as
         a service. However this only indicates that the way of persisting the iptable rules are persisted via other
@@ -187,15 +181,14 @@ class CobblerCheck:
         # TODO: Rewrite check to be able to verify this is in more cases
         if os.path.exists("/etc/rc.d/init.d/iptables"):
             return_code = utils.subprocess_call(
-                "/sbin/service iptables status >/dev/null 2>/dev/null", shell=True
+                ["/sbin/service", "iptables", "status"], shell=False
             )
             if return_code == 0:
                 status.append(
-                    "since iptables may be running, ensure 69, 80/443, and %(xmlrpc)s are unblocked"
-                    % {"xmlrpc": self.settings.xmlrpc_port}
+                    f"since iptables may be running, ensure 69, 80/443, and {self.settings.xmlrpc_port} are unblocked"
                 )
 
-    def check_yum(self, status):
+    def check_yum(self, status: List[str]) -> None:
         """
         Check if the yum-stack is available. On Debian based distros this will always return without checking.
 
@@ -233,7 +226,7 @@ class CobblerCheck:
                 "yumdownloader is not installed, install yum-utils or dnf-plugins-core"
             )
 
-    def check_debmirror(self, status):
+    def check_debmirror(self, status: List[str]) -> None:
         """
         Check if debmirror is available and the config file for it exists. If the distro family is suse then this will
         pass without checking.
@@ -249,10 +242,10 @@ class CobblerCheck:
                 "repositories"
             )
         if os.path.exists("/etc/debmirror.conf"):
-            with open("/etc/debmirror.conf") as f:
+            with open("/etc/debmirror.conf", encoding="UTF-8") as debmirror_fd:
                 re_dists = re.compile(r"@dists=")
                 re_arches = re.compile(r"@arches=")
-                for line in f.readlines():
+                for line in debmirror_fd.readlines():
                     if re_dists.search(line) and not line.strip().startswith("#"):
                         status.append(
                             "comment out 'dists' on /etc/debmirror.conf for proper debian support"
@@ -262,7 +255,7 @@ class CobblerCheck:
                             "comment out 'arches' on /etc/debmirror.conf for proper debian support"
                         )
 
-    def check_name(self, status):
+    def check_name(self, status: List[str]) -> None:
         """
         If the server name in the config file is still set to localhost automatic installations run from koan will not
         have proper kernel line parameters.
@@ -287,7 +280,7 @@ class CobblerCheck:
                 "something other than ::1, and should match the IP of the boot server on the PXE network."
             )
 
-    def check_selinux(self, status):
+    def check_selinux(self, status: List[str]) -> None:
         """
         Suggests various SELinux rules changes to run Cobbler happily with SELinux in enforcing mode.
 
@@ -302,10 +295,10 @@ class CobblerCheck:
             status.append(
                 "SELinux is enabled. Please review the following wiki page for details on ensuring Cobbler "
                 "works correctly in your SELinux environment:\n    "
-                "https://github.com/cobbler/cobbler/wiki/Selinux"
+                "https://cobbler.readthedocs.io/en/latest/user-guide/selinux.html"
             )
 
-    def check_for_default_password(self, status):
+    def check_for_default_password(self, status: List[str]) -> None:
         """
         Check if the default password of Cobbler was changed.
 
@@ -320,49 +313,50 @@ class CobblerCheck:
                 "generate new one"
             )
 
-    def check_for_unreferenced_repos(self, status):
+    def check_for_unreferenced_repos(self, status: List[str]) -> None:
         """
         Check if there are repositories which are not used and thus could be removed.
 
         :param status: The status list with possible problems.
         """
-        repos = []
-        referenced = []
-        not_found = []
-        for r in self.api.repos():
-            repos.append(r.name)
-        for p in self.api.profiles():
-            my_repos = p.repos
+        repos: List[str] = []
+        referenced: List[str] = []
+        not_found: List[str] = []
+        for repo in self.api.repos():
+            repos.append(repo.name)
+        for profile in self.api.profiles():
+            my_repos = profile.repos
             if my_repos != "<<inherit>>":
                 referenced.extend(my_repos)
-        for r in referenced:
-            if r not in repos and r != "<<inherit>>":
-                not_found.append(r)
+        for repo in referenced:
+            if repo not in repos and repo != "<<inherit>>":
+                not_found.append(repo)
         if len(not_found) > 0:
             status.append(
-                "One or more repos referenced by profile objects is no longer defined in Cobbler: %s"
-                % ", ".join(not_found)
+                "One or more repos referenced by profile objects is no longer defined in Cobbler:"
+                f" {', '.join(not_found)}"
             )
 
-    def check_for_unsynced_repos(self, status):
+    def check_for_unsynced_repos(self, status: List[str]) -> None:
         """
         Check if there are unsynchronized repositories which need an update.
 
         :param status: The status list with possible problems.
         """
-        need_sync = []
-        for r in self.api.repos():
-            if r.mirror_locally == 1:
-                lookfor = os.path.join(self.settings.webdir, "repo_mirror", r.name)
+        need_sync: List[str] = []
+        for repo in self.api.repos():
+            if repo.mirror_locally is True:
+                lookfor = os.path.join(self.settings.webdir, "repo_mirror", repo.name)
                 if not os.path.exists(lookfor):
-                    need_sync.append(r.name)
+                    need_sync.append(repo.name)
         if len(need_sync) > 0:
             status.append(
                 "One or more repos need to be processed by cobbler reposync for the first time before "
-                "automating installations using them: %s" % ", ".join(need_sync)
+                f"automating installations using them: {', '.join(need_sync)}"
             )
 
-    def check_dhcpd_bin(self, status):
+    @staticmethod
+    def check_dhcpd_bin(status: List[str]) -> None:
         """
         Check if dhcpd is installed.
 
@@ -371,42 +365,46 @@ class CobblerCheck:
         if not os.path.exists("/usr/sbin/dhcpd"):
             status.append("dhcpd is not installed")
 
-    def check_dnsmasq_bin(self, status):
+    @staticmethod
+    def check_dnsmasq_bin(status: List[str]) -> None:
         """
         Check if dnsmasq is installed.
 
         :param status: The status list with possible problems.
         """
-        return_code = utils.subprocess_call("dnsmasq --help")
+        return_code = utils.subprocess_call(["dnsmasq", "--help"], shell=False)
         if return_code != 0:
             status.append("dnsmasq is not installed and/or in path")
 
-    def check_bind_bin(self, status):
+    @staticmethod
+    def check_bind_bin(status: List[str]) -> None:
         """
         Check if bind is installed.
 
         :param status: The status list with possible problems.
         """
-        return_code = utils.subprocess_call("named -v")
+        return_code = utils.subprocess_call(["named", "-v"], shell=False)
         # it should return something like "BIND 9.6.1-P1-RedHat-9.6.1-6.P1.fc11"
         if return_code != 0:
             status.append("named is not installed and/or in path")
 
-    def check_for_wget_curl(self, status):
+    @staticmethod
+    def check_for_wget_curl(status: List[str]) -> None:
         """
         Check to make sure wget or curl is installed
 
         :param status: The status list with possible problems.
         """
-        rc_wget = utils.subprocess_call("wget --help")
-        rc_curl = utils.subprocess_call("curl --help")
+        rc_wget = utils.subprocess_call(["wget", "--help"], shell=False)
+        rc_curl = utils.subprocess_call(["curl", "--help"], shell=False)
         if rc_wget != 0 and rc_curl != 0:
             status.append(
                 "Neither wget nor curl are installed and/or available in $PATH. Cobbler requires that one "
                 "of these utilities be installed."
             )
 
-    def check_bootloaders(self, status):
+    @staticmethod
+    def check_bootloaders(status: List[str]) -> None:
         """
         Check if network bootloaders are installed
 
@@ -432,7 +430,7 @@ class CobblerCheck:
         }
 
         # look for bootloaders at the glob locations above
-        found_bootloaders = []
+        found_bootloaders: List[str] = []
         items = list(bootloaders.keys())
         for loader_name in items:
             patterns = bootloaders[loader_name]
@@ -440,7 +438,7 @@ class CobblerCheck:
                 matches = glob.glob(pattern)
                 if len(matches) > 0:
                     found_bootloaders.append(loader_name)
-        not_found = []
+        not_found: List[str] = []
 
         # invert the list of what we've found so we can report on what we haven't found
         for loader_name in items:
@@ -456,7 +454,7 @@ class CobblerCheck:
                 "menu.c32."
             )
 
-    def check_tftpd_dir(self, status):
+    def check_tftpd_dir(self, status: List[str]) -> None:
         """
         Check if cobbler.conf's tftpboot directory exists
 
@@ -467,9 +465,9 @@ class CobblerCheck:
 
         bootloc = self.settings.tftpboot_location
         if not os.path.exists(bootloc):
-            status.append("please create directory: %(dirname)s" % {"dirname": bootloc})
+            status.append(f"please create directory: {bootloc}")
 
-    def check_ctftpd_dir(self, status):
+    def check_ctftpd_dir(self, status: List[str]) -> None:
         """
         Check if ``cobbler.conf``'s tftpboot directory exists.
 
@@ -480,9 +478,9 @@ class CobblerCheck:
 
         bootloc = self.settings.tftpboot_location
         if not os.path.exists(bootloc):
-            status.append("please create directory: %(dirname)s" % {"dirname": bootloc})
+            status.append(f"please create directory: {bootloc}")
 
-    def check_rsync_conf(self, status):
+    def check_rsync_conf(self, status: List[str]) -> None:
         """
         Check that rsync is enabled to autostart.
 
@@ -497,7 +495,7 @@ class CobblerCheck:
             ):
                 status.append("enable and start rsyncd.service with systemctl")
 
-    def check_dhcpd_conf(self, status):
+    def check_dhcpd_conf(self, status: List[str]) -> None:
         """
         NOTE: this code only applies if Cobbler is *NOT* set to generate a ``dhcp.conf`` file.
 
@@ -513,20 +511,17 @@ class CobblerCheck:
         if os.path.exists(self.settings.dhcpd_conf):
             match_next = False
             match_file = False
-            f = open(self.settings.dhcpd_conf)
-            for line in f.readlines():
-                if line.find("next-server") != -1:
-                    match_next = True
-                if line.find("filename") != -1:
-                    match_file = True
+            with open(self.settings.dhcpd_conf, encoding="UTF-8") as dhcpd_conf_fd:
+                for line in dhcpd_conf_fd.readlines():
+                    if line.find("next-server") != -1:
+                        match_next = True
+                    if line.find("filename") != -1:
+                        match_file = True
             if not match_next:
                 status.append(
-                    "expecting next-server entry in %(file)s"
-                    % {"file": self.settings.dhcpd_conf}
+                    f"expecting next-server entry in {self.settings.dhcpd_conf}"
                 )
             if not match_file:
-                status.append(
-                    "missing file: %(file)s" % {"file": self.settings.dhcpd_conf}
-                )
+                status.append(f"missing file: {self.settings.dhcpd_conf}")
         else:
-            status.append("missing file: %(file)s" % {"file": self.settings.dhcpd_conf})
+            status.append(f"missing file: {self.settings.dhcpd_conf}")

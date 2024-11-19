@@ -51,7 +51,7 @@ cat >${tmp}/a <<-EOF
     "client_use_localhost": false,
     "cobbler_master": "",
     "convert_server_to_ip": false,
-    "createrepo_flags": "-c cache -s sha",
+    "createrepo_flags": "--cachedir=cache --update",
     "autoinstall": "default.ks",
     "default_name_servers": [],
     "default_name_servers_search": [],
@@ -60,13 +60,14 @@ cat >${tmp}/a <<-EOF
     ],
     "default_password_crypted": "$1$mF86/UHC$WvcIcX2t6crBz2onWxyac.",
     "default_template_type": "cheetah",
-    "default_virt_bridge": "xenbr0",
+    "default_virt_bridge": "virbr0",
     "default_virt_disk_driver": "raw",
     "default_virt_file_size": 5,
     "default_virt_ram": 512,
-    "default_virt_type": "xenpv",
+    "default_virt_type": "kvm",
     "enable_ipxe": false,
     "enable_menu": true,
+    "extra_settings_list": [],
     "http_port": 80,
     "include": [
         "/etc/cobbler/settings.d/*.settings"
@@ -142,7 +143,7 @@ cat >${tmp}/a <<-EOF
     "server": "192.168.1.1",
     "sign_puppet_certs_automatically": false,
     "signature_path": "/var/lib/cobbler/distro_signatures.json",
-    "signature_url": "https://cobbler.github.io/signatures/3.0.x/latest.json",
+    "signature_url": "https://cobbler.github.io/libcobblersignatures/data/v2/distro_signatures.json",
     "syslinux_dir": "/usr/share/syslinux",
     "syslinux_memdisk_folder": "/usr/share/syslinux",
     "syslinux_pxelinux_folder": "/usr/share/syslinux",
@@ -212,7 +213,7 @@ cat >${tmp}/a <<-EOF
             ]
         },
         "x86_64-efi": {
-            "binary_name": "grubx86.efi",
+            "binary_name": "grubx64.efi",
             "extra_modules": [
                 "chain",
                 "efinet"

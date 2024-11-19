@@ -1,5 +1,6 @@
 #!/bin/sh -e
 # Bootstrap the OS for system tests
+# If you adjust anything in this file please check also with the "../prelude" script
 
 server=192.168.1.1
 bridge=pxe
@@ -21,6 +22,7 @@ manage_dhcp_v4: true
 manage_dhcp_v6: false
 power_management_default_type: 'ipmilan'
 tftpboot_location: '/srv/tftpboot'
+webdir: '/srv/www/cobbler'
 EOF
 
 supervisorctl restart cobblerd

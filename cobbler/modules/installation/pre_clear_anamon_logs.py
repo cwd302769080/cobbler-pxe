@@ -1,30 +1,22 @@
 """
-(C) 2008-2009, Red Hat Inc.
-James Laska <jlaska@redhat.com>
-Bill Peck <bpeck@redhat.com>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
-02110-1301  USA
+Cobbler Module Trigger that will clear the anamon logs.
 """
+
+# SPDX-License-Identifier: GPL-2.0-or-later
+# SPDX-FileCopyrightText: Copyright 2008-2009, Red Hat Inc.
+# SPDX-FileCopyrightText: James Laska <jlaska@redhat.com>
+# SPDX-FileCopyrightText: Bill Peck <bpeck@redhat.com>
 
 import glob
 import logging
 import os
+from typing import TYPE_CHECKING, List
 
-from cobbler import utils
 from cobbler.cexceptions import CX
+from cobbler.utils import filesystem_helpers
+
+if TYPE_CHECKING:
+    from cobbler.api import CobblerAPI
 
 
 PATH_PREFIX = "/var/log/cobbler/anamon/"
@@ -42,7 +34,7 @@ def register() -> str:
     return "/var/lib/cobbler/triggers/install/pre/*"
 
 
-def run(api, args) -> int:
+def run(api: "CobblerAPI", args: List[str]) -> int:
     """
     The list of args should have one element:
         - 1: the name of the system or profile
@@ -60,10 +52,10 @@ def run(api, args) -> int:
     settings = api.settings()
 
     # Remove any files matched with the given glob pattern
-    def unlink_files(globex):
-        for f in glob.glob(globex):
-            if os.path.isfile(f):
-                utils.rmfile(f)
+    def unlink_files(globex: str) -> None:
+        for file in glob.glob(globex):
+            if os.path.isfile(file):
+                filesystem_helpers.rmfile(file)
 
     if settings.anamon_enabled:
         dirname = os.path.join(PATH_PREFIX, name)

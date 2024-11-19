@@ -1,19 +1,28 @@
+"""
+Tests that validate the functionality of the module that is responsible for generating configuration data.
+"""
+
 import os
+from typing import Any, Callable, Generator
 
 import pytest
 
+from cobbler.api import CobblerAPI
 from cobbler.configgen import ConfigGen
 from cobbler.items.distro import Distro
 from cobbler.items.profile import Profile
 from cobbler.items.system import System
 
-
 # TODO: If the action items of the configgen class are done then the tests need to test the robustness of the class.
 
 
-@pytest.fixture
-def create_testbed(create_kernel_initrd, cobbler_api, cleanup_testbed):
-    def _create_testbed():
+@pytest.fixture(name="create_testbed")
+def fixture_create_testbed(
+    create_kernel_initrd: Callable[[str, str], str],
+    cobbler_api: CobblerAPI,
+    cleanup_testbed: Any,
+):
+    def _create_testbed() -> CobblerAPI:
         folder = create_kernel_initrd("vmlinux", "initrd.img")
         test_distro = Distro(cobbler_api)
         test_distro.name = "test_configgen_distro"
@@ -36,15 +45,15 @@ def create_testbed(create_kernel_initrd, cobbler_api, cleanup_testbed):
     return _create_testbed
 
 
-@pytest.fixture(autouse=True)
-def cleanup_testbed(cobbler_api):
+@pytest.fixture(name="cleanup_testbed", autouse=True)
+def fixture_cleanup_testbed(cobbler_api: CobblerAPI) -> Generator[None, Any, None]:
     yield
     cobbler_api.remove_system("test_configgen_system")
     cobbler_api.remove_profile("test_configgen_profile")
     cobbler_api.remove_distro("test_configgen_distro")
 
 
-def test_object_value_error(cobbler_api):
+def test_object_value_error(cobbler_api: CobblerAPI):
     # Arrange
 
     # Act & Assert
@@ -52,7 +61,7 @@ def test_object_value_error(cobbler_api):
         ConfigGen(cobbler_api, "nonexistant")
 
 
-def test_object_creation(create_testbed):
+def test_object_creation(create_testbed: Callable[[], CobblerAPI]):
     # Arrange
     test_api = create_testbed()
     # FIXME: Arrange distro, profile and system
@@ -64,10 +73,10 @@ def test_object_creation(create_testbed):
     assert isinstance(test_configgen, ConfigGen)
 
 
-def test_resolve_resource_var(create_testbed):
+def test_resolve_resource_var(create_testbed: Callable[[], CobblerAPI]):
     # Arrange
     test_api = create_testbed()
-    # FIXME: Arrange distro, profile and system, package and file
+    # FIXME: Arrange distro, profile and system
     config_gen = ConfigGen(test_api, "testhost.test.de")
 
     # Act
@@ -78,10 +87,10 @@ def test_resolve_resource_var(create_testbed):
     assert result == "Hello teststring !"
 
 
-def test_get_cobbler_resource(create_testbed):
+def test_get_cobbler_resource(create_testbed: Callable[[], CobblerAPI]):
     # Arrange
     test_api = create_testbed()
-    # FIXME: Arrange distro, profile and system, package and file
+    # FIXME: Arrange distro, profile and system
     config_gen = ConfigGen(test_api, "testhost.test.de")
 
     # Act
@@ -91,10 +100,10 @@ def test_get_cobbler_resource(create_testbed):
     assert isinstance(result, (list, str, dict))
 
 
-def test_get_config_data(create_testbed):
+def test_get_config_data(create_testbed: Callable[[], CobblerAPI]):
     # Arrange
     test_api = create_testbed()
-    # FIXME: Arrange distro, profile and system, package and file
+    # FIXME: Arrange distro, profile and system
     config_gen = ConfigGen(test_api, "testhost.test.de")
 
     # Act
@@ -104,10 +113,10 @@ def test_get_config_data(create_testbed):
     assert isinstance(result, dict)
 
 
-def test_get_config_data_for_koan(create_testbed):
+def test_get_config_data_for_koan(create_testbed: Callable[[], CobblerAPI]):
     # Arrange
     test_api = create_testbed()
-    # FIXME: Arrange distro, profile and system, package and file
+    # FIXME: Arrange distro, profile and system
     config_gen = ConfigGen(test_api, "testhost.test.de")
 
     # Act

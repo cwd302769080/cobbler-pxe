@@ -1,27 +1,18 @@
 """
-(C) 2008-2009, Red Hat Inc.
-Michael DeHaan <michael.dehaan AT gmail>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
-02110-1301  USA
+Cobbler Module Trigger that will mark a system as installed in ``cobbler status``.
 """
 
+# SPDX-License-Identifier: GPL-2.0-or-later
+# SPDX-FileCopyrightText: Copyright 2008-2009, Red Hat, Inc and Others
+# SPDX-FileCopyrightText: Michael DeHaan <michael.dehaan AT gmail>
 
 import time
+from typing import TYPE_CHECKING, List
 
 from cobbler import validate
+
+if TYPE_CHECKING:
+    from cobbler.api import CobblerAPI
 
 
 def register() -> str:
@@ -33,7 +24,7 @@ def register() -> str:
     return "/var/lib/cobbler/triggers/install/post/*"
 
 
-def run(api, args) -> int:
+def run(api: "CobblerAPI", args: List[str]) -> int:
     """
     The method runs the trigger, meaning this logs that an installation has ended.
 
@@ -48,7 +39,7 @@ def run(api, args) -> int:
     """
     objtype = args[0]
     name = args[1]
-    ip = args[2]
+    ip_address = args[2]
 
     if not validate.validate_obj_type(objtype):
         return 1
@@ -56,12 +47,16 @@ def run(api, args) -> int:
     if not api.find_items(objtype, name=name, return_list=False):
         return 1
 
-    if not (ip == "?" or validate.ipv4_address(ip) or validate.ipv6_address(ip)):
+    if not (
+        ip_address == "?"
+        or validate.ipv4_address(ip_address)
+        or validate.ipv6_address(ip_address)
+    ):
         return 1
 
     # FIXME: use the logger
 
-    with open("/var/log/cobbler/install.log", "a+") as fd:
-        fd.write("%s\t%s\t%s\tstop\t%s\n" % (objtype, name, ip, time.time()))
+    with open("/var/log/cobbler/install.log", "a", encoding="UTF-8") as install_log_fd:
+        install_log_fd.write(f"{objtype}\t{name}\t{ip_address}\tstop\t{time.time()}\n")
 
     return 0

@@ -1,29 +1,21 @@
 """
-(C) 2009, Red Hat Inc.
-Michael DeHaan <michael.dehaan AT gmail>
-
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
-02110-1301  USA
+Cobbler Trigger Module that puts the content of the Cobbler data directory under version control. Depending on
+``scm_track_mode`` in the settings, this can either be git or Mercurial.
 """
+
+# SPDX-License-Identifier: GPL-2.0-or-later
+# SPDX-FileCopyrightText: Copyright 2009, Red Hat Inc.
+# SPDX-FileCopyrightText: Michael DeHaan <michael.dehaan AT gmail>
 
 
 import os
+from typing import TYPE_CHECKING, Any
 
-import cobbler.utils as utils
-
+from cobbler import utils
 from cobbler.cexceptions import CX
+
+if TYPE_CHECKING:
+    from cobbler.api import CobblerAPI
 
 
 def register() -> str:
@@ -36,7 +28,7 @@ def register() -> str:
     return "/var/lib/cobbler/triggers/change/*"
 
 
-def run(api, args):
+def run(api: "CobblerAPI", args: Any):
     """
     Runs the trigger, meaning in this case track any changed which happen to a config or data file.
 
@@ -72,12 +64,12 @@ def run(api, args):
         )
 
         if push_script:
-            utils.subprocess_call([push_script], shell=False)
+            utils.subprocess_call(push_script.split(" "), shell=False)
 
         os.chdir(old_dir)
         return 0
 
-    elif mode == "hg":
+    if mode == "hg":
         # use mercurial
         old_dir = os.getcwd()
         os.chdir("/var/lib/cobbler")
@@ -92,14 +84,13 @@ def run(api, args):
         utils.subprocess_call(["hg", "add templates"], shell=False)
         utils.subprocess_call(["hg", "add snippets"], shell=False)
         utils.subprocess_call(
-            ["hg", "commit", "-m", "API", "update", "--user", author], shell=False
+            ["hg", "commit", "-m", "API update", "--user", author], shell=False
         )
 
         if push_script:
-            utils.subprocess_call([push_script], shell=False)
+            utils.subprocess_call(push_script.split(" "), shell=False)
 
         os.chdir(old_dir)
         return 0
 
-    else:
-        raise CX("currently unsupported SCM type: %s" % mode)
+    raise CX(f"currently unsupported SCM type: {mode}")

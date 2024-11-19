@@ -4,10 +4,11 @@ except the Python standard library.
 """
 
 import enum
-from typing import Union
+from typing import TypeVar, Union
 
 VALUE_INHERITED = "<<inherit>>"
 VALUE_NONE = "none"
+CONVERTABLEENUM = TypeVar("CONVERTABLEENUM", bound="ConvertableEnum")
 
 
 class ConvertableEnum(enum.Enum):
@@ -16,7 +17,7 @@ class ConvertableEnum(enum.Enum):
     """
 
     @classmethod
-    def to_enum(cls, value: Union[str, "ConvertableEnum"]) -> "ConvertableEnum":
+    def to_enum(cls, value: Union[str, CONVERTABLEENUM]) -> CONVERTABLEENUM:
         """
         This method converts the chosen str to the corresponding enum type.
 
@@ -25,22 +26,90 @@ class ConvertableEnum(enum.Enum):
         :raises TypeError: In case value was not of type str.
         :raises ValueError: In case value was not in the range of valid values.
         """
+        # mypy cannot handle the MRO in case we make this a real abstract class
+        # Thus since we use this like an abstract class we will just add the three ignores here since we
+        # are sure that this will be okay.
         try:
             if isinstance(value, str):
                 if value == VALUE_INHERITED:
                     try:
-                        return cls["INHERITED"]
+                        return cls["INHERITED"]  # type: ignore
                     except KeyError as key_error:
                         raise ValueError(
                             "The enum given does not support inheritance!"
                         ) from key_error
-                return cls[value.upper()]
-            elif isinstance(value, cls):
-                return value
-            else:
-                raise TypeError(f"{value} must be a str or Enum")
+                return cls[value.upper()]  # type: ignore
+            if isinstance(value, cls):
+                return value  # type: ignore
+            raise TypeError(f"{value} must be a str or Enum")
         except KeyError:
-            raise ValueError(f"{value} must be one of {list(cls)}")
+            raise ValueError(f"{value} must be one of {list(cls)}") from KeyError
+
+
+class EventStatus(ConvertableEnum):
+    """
+    This enums describes the status an event can have. The cycle is the following:
+
+        "Running" --> "Complete" or "Failed"
+    """
+
+    RUNNING = "running"
+    """
+    Shows that an event is currently being processed by the server
+    """
+    COMPLETE = "complete"
+    """
+    Shows that an event did complete as desired
+    """
+    FAILED = "failed"
+    """
+    Shows that an event did not complete as expected
+    """
+    INFO = "notification"
+    """
+    Default Event status
+    """
+
+
+class ItemTypes(ConvertableEnum):
+    """
+    This enum represents all valid item types in Cobbler. If a new item type is created it must be added into this enum.
+    Abstract base item types don't have to be added here.
+    """
+
+    DISTRO = "distro"
+    """
+    See :func:`~cobbler.items.distro.Distro`
+    """
+    PROFILE = "profile"
+    """
+    See :func:`~cobbler.items.profile.Profile`
+    """
+    SYSTEM = "system"
+    """
+    See :func:`~cobbler.items.system.System`
+    """
+    REPO = "repo"
+    """
+    See :func:`~cobbler.items.repo.Repo`
+    """
+    IMAGE = "image"
+    """
+    See :func:`~cobbler.items.image.Image`
+    """
+    MENU = "menu"
+    """
+    See :func:`~cobbler.items.menu.Menu`
+    """
+
+
+class DHCP(enum.Enum):
+    """
+    TODO
+    """
+
+    V4 = 4
+    V6 = 6
 
 
 class ResourceAction(ConvertableEnum):
@@ -187,6 +256,7 @@ class MirrorType(ConvertableEnum):
     This enum represents all mirror types which Cobbler can manage.
     """
 
+    NONE = "none"
     METALINK = "metalink"
     MIRRORLIST = "mirrorlist"
     BASEURL = "baseurl"

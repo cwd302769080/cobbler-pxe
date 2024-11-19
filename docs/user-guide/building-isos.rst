@@ -9,7 +9,12 @@ run Cobbler via systemd as a service.
 
 Per default this builds an ISO for all available systems and profiles.
 
+.. note:: All systems refers to systems that are profile based. Systems with a parent image based systems will be
+          skipped.
+
 If you want to generate multiple ISOs you need to execute this command multiple times (with different ``--iso`` names).
+
+NOTE: This feature is currently only supported for the following architectures: x86_64, ppc, ppc64, ppc64le and ppc64el.
 
 Under the hood
 ##############
@@ -19,7 +24,7 @@ Thus we don't execute "mkisofs" anymore. Please be aware of this when adding CLI
 
 On the Python side we are executing the following command:
 
-.. code::
+.. code-block:: shell
 
    xorriso -as mkisofs $XORRISOFS_OPTS -isohybrid-mbr $ISOHDPFX_location -c isolinux/boot.cat \
      -b isolinux/isolinux.bin -no-emul-boot -boot-load-size 4 -boot-info-table -eltorito-alt-boot \
@@ -28,7 +33,7 @@ On the Python side we are executing the following command:
 
 Explanation what this command is doing:
 
-.. code::
+.. code-block:: shell
 
    xorriso -as mkisofs \
      -isohybrid-mbr /usr/share/syslinux/isohdpfx.bin \  # --> Makes the image MBR bootable and specifies the MBR File
@@ -54,6 +59,8 @@ Common options for building ISOs
   you should really consider using a tmpfs for performance.
 * ``--profiles``: Modify the profiles Cobbler builds ISOs for. If this is omitted, ISOs for all profiles will be built.
 * ``--xorrisofs-opts``: The options which are passed to xorriso additionally to the above shown.
+* ``--esp``: Explicitly specify the EFI System Partition (ESP). The default is to attempt to search for ESP, and
+  generate one if an ESP cannot be found.
 
 Building standalone ISOs
 ########################
@@ -71,7 +78,25 @@ Building net-installer ISOs
 You have to provide the following parameters:
 
 * ``--systems``: Filter the systems you want to build the ISO for.
-* ``--exclude-dns``: Flag to add the nameservers (and other DNS information) to the append line or not.
+* ``--exclude-dns``: Flag to add the nameservers (and other DNS information) to the append line or not. This only has
+  an effect in case you supply ``--systems`` and the system contains the ``--name-servers`` configuration.
+
+Building ISOs for Secure Boot
+#############################
+
+When you build an ISO from a distribution that is stored in the Cobbler Web directory, e.g.
+ ``/srv/www/cobbler/distro_mirror/``, Cobbler looks for the EFI System Partition (ESP) of the provided distribution
+ automatically. This is the default behavior, for example, when you use the ``cobbler import`` command to
+ create a distribution.
+
+If you create a distribution that references files stored outside of the Cobbler Web directory, e.g.
+``/usr/share/tftpboot-installation/SLE-15-SP6-x86_64``, use the ``--esp`` parameter to specify the location of
+the ESP, for example:
+
+.. code-block:: shell
+
+   cobbler buildiso --esp="/usr/share/tftpboot-installation/SLE-15-SP6-x86_64/boot/x86_64/efi" \
+     --iso=/tmp/out.iso --distro=sles15-sp6
 
 Examples
 ########

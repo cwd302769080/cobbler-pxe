@@ -2,45 +2,65 @@ name: Linting
 
 on:
   push:
-    branches:
-      - main
-      - release30
-      - release32
+    branches: [ main, release* ]
   pull_request:
-    branches:
-      - main
-      - release30
-      - release32
+    branches: [ main, release* ]
 
 jobs:
-  lint_docs:
+  docs:
     runs-on: ubuntu-20.04
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Set up Python
-      uses: actions/setup-python@v1
+      uses: actions/setup-python@v5
       with:
         python-version: 3.9
     - name: Install dependencies
-      run:  pip install -U rstcheck doc8
+      run:  pip install -U rstcheck doc8 sphinx
     - name: Run rstcheck
       run:  rstcheck -r docs
     - name: Run doc8
       run: doc8 --ignore D001 docs
-  lint_shellscripts:
+  shellscripts:
     runs-on: ubuntu-20.04
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Run ShellCheck
         uses: ludeeus/action-shellcheck@master
         with:
           scandir: './scripts'
-  linter_name:
-    name: runner/black formatter
+  pyright:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.6'
+          cache: 'pip' # caching pip dependencies
+          cache-dependency-path: '**/setup.py'
+      - name: Install system dependencies
+        run: sudo apt-get install -y libldap2-dev libsasl2-dev libsystemd-dev
+      - name: Install Python dependencies
+        run: pip install .[test,extra,docs,lint]
+      - uses: jakebailey/pyright-action@v2
+        # https://github.com/jakebailey/pyright-action
+        with:
+          version: '1.1.350'
+  python_black:
+    name: black formatter
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - uses: psf/black@stable
         with:
-          options: "--check --safe --verbose"
+          options: "--check --diff --safe --verbose"
           version: "22.3.0"
+  python_isort:
+    name: isort formatter
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+      - uses: isort/isort-action@v1.1.0
+        with:
+          configuration: --check-only --diff --profile=black
